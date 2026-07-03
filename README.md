@@ -29,6 +29,7 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 | `--vscode` | VS Code + extensions Python/LaTeX/Markdown |
 | `--utils` | htop, tmux, ripgrep, fzf, Timeshift, Flameshot, GIMP, VLC |
 | `--local-ai` | Ollama |
+| `--gdrive` | Google Drive via `rclone` (montage local automatique avec cache systemd) |
 
 ```bash
 ./setup_ubuntu.sh                       # menu interactif

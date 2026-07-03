@@ -17,7 +17,7 @@
 #                                        marqués comme réussis
 #
 # Modules : --prereqs --ai --browser-pdf --office --latex --python
-#           --web-mobile --vscode --utils --local-ai
+#           --web-mobile --vscode --utils --local-ai --gdrive
 #
 # Le script est idempotent et reprend là où il s'est arrêté : il garde une
 # trace des modules réussis/échoués dans ~/.setup_ubuntu_state
@@ -602,9 +602,58 @@ install_local_ai() {
 }
 
 ###############################################################################
+# 10. GOOGLE DRIVE (rclone + systemd mount)
+###############################################################################
+install_gdrive() {
+    log "=== Google Drive (rclone) ==="
+    local module_ok=1
+
+    apt_install rclone || module_ok=0
+
+    # Dossier de montage
+    mkdir -p "$HOME/Google_Drive"
+
+    # Fichier service systemd
+    local service_dir="$HOME/.config/systemd/user"
+    mkdir -p "$service_dir"
+    cat > "$service_dir/rclone-gdrive.service" <<EOF
+[Unit]
+Description=Rclone Google Drive Mount Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rclone mount gdrive: %h/Google_Drive --vfs-cache-mode full --vfs-cache-max-age 24h --vfs-cache-max-size 10G --vfs-read-chunk-size 32M --vfs-read-chunk-size-limit off --buffer-size 32M
+ExecStop=/usr/bin/fusermount3 -u %h/Google_Drive
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+EOF
+
+    # Recharger systemd et activer le service
+    if systemctl --user daemon-reload \
+       && systemctl --user enable rclone-gdrive.service; then
+        ok "Service systemd rclone-gdrive installé et activé."
+    else
+        warn "Impossible d'activer le service systemd rclone-gdrive."
+        module_ok=0
+    fi
+
+    if [[ "$module_ok" -eq 1 ]]; then
+        mark_done "gdrive"
+        warn "Pense à lancer 'rclone config' si ce n'est pas déjà fait pour authentifier le compte 'gdrive'."
+    else
+        FAILED_MODULES+=("gdrive")
+    fi
+}
+
+###############################################################################
 # MENU / DISPATCH
 ###############################################################################
-ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai)
+ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai gdrive)
 
 run_module() {
     local m="$1"
@@ -623,6 +672,7 @@ run_module() {
         vscode)       install_vscode ;;
         utils)        install_utils ;;
         local-ai)     install_local_ai ;;
+        gdrive)       install_gdrive ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
@@ -637,6 +687,7 @@ show_menu() {
     echo "  3) Chrome + lecteurs PDF   8) VS Code + extensions"
     echo "  4) Suite bureautique       9) Utilitaires"
     echo "  5) LaTeX complet          10) IA locale (Ollama)"
+    echo "                            11) Google Drive (rclone)"
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -649,6 +700,7 @@ show_menu() {
             5) run_module latex ;;        6) run_module python ;;
             7) run_module web-mobile ;;   8) run_module vscode ;;
             9) run_module utils ;;        10) run_module local-ai ;;
+            11) run_module gdrive ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
