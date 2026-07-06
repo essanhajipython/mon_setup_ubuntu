@@ -17,7 +17,7 @@
 #                                        marqués comme réussis
 #
 # Modules : --prereqs --ai --browser-pdf --office --latex --python
-#           --web-mobile --vscode --utils --local-ai --gdrive
+#           --web-mobile --vscode --utils --local-ai --dash-to-panel --gdrive
 #
 # Le script est idempotent et reprend là où il s'est arrêté : il garde une
 # trace des modules réussis/échoués dans ~/.setup_ubuntu_state
@@ -602,7 +602,63 @@ install_local_ai() {
 }
 
 ###############################################################################
-# 10. GOOGLE DRIVE (rclone + systemd mount)
+# 10. DASH TO PANEL (extension GNOME)
+###############################################################################
+install_dash_to_panel() {
+    log "=== Dash to Panel (extension GNOME) ==="
+    local module_ok=1
+    local ext_dir="$HOME/.local/share/gnome-shell/extensions/dash-to-panel@jderose9.github.com"
+
+    if [[ -d "$ext_dir" ]] && [[ -f "$ext_dir/extension.js" ]]; then
+        ok "Dash to Panel déjà installé et fonctionnel."
+        mark_done "dash-to-panel"
+        return
+    fi
+
+    # Détection / nettoyage d'une installation corrompue (ex: clonage Git sans compilation)
+    if [[ -d "$ext_dir" ]] && [[ ! -f "$ext_dir/extension.js" ]]; then
+        warn "Installation corrompue détectée (extension.js manquant) — nettoyage..."
+        rm -rf "$ext_dir"
+    fi
+
+    log "Installation de Dash to Panel v73..."
+    mkdir -p "$(dirname "$ext_dir")"
+    local tmp_zip
+    tmp_zip=$(mktemp --suffix=.zip)
+    if download_retry "https://extensions.gnome.org/extension-data/dash-to-paneljderose9.github.com.v73.shell-extension.zip" \
+        "$tmp_zip"; then
+        if unzip -q -o "$tmp_zip" -d "$ext_dir"; then
+            # Activer l'extension
+            busctl --user call org.gnome.Shell.Extensions \
+                /org/gnome/Shell/Extensions \
+                org.gnome.Shell.Extensions InstallRemoteExtension \
+                s "dash-to-panel@jderose9.github.com" >/dev/null 2>&1 || true
+            gnome-extensions enable dash-to-panel@jderose9.github.com >/dev/null 2>&1 || true
+            # Désactiver ubuntu-dock qui est incompatible
+            gnome-extensions disable ubuntu-dock@ubuntu.com >/dev/null 2>&1 || true
+            # Vider le cache
+            rm -rf "$HOME/.cache/gnome-shell/" "$HOME/.local/share/gnome-shell/gnome-shell-extensions-cache/" 2>/dev/null || true
+            ok "Dash to Panel installé."
+        else
+            warn "Extraction du zip échouée."
+            module_ok=0
+        fi
+        rm -f "$tmp_zip"
+    else
+        warn "Téléchargement de Dash to Panel échoué après plusieurs tentatives."
+        module_ok=0
+    fi
+
+    if [[ "$module_ok" -eq 1 ]]; then
+        mark_done "dash-to-panel"
+        warn "Déconnexion/reconnexion nécessaire (surtout sous Wayland) pour voir l'extension."
+    else
+        FAILED_MODULES+=("dash-to-panel")
+    fi
+}
+
+###############################################################################
+# 11. GOOGLE DRIVE (rclone + systemd mount)
 ###############################################################################
 install_gdrive() {
     log "=== Google Drive (rclone) ==="
@@ -653,7 +709,7 @@ EOF
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
-ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai gdrive)
+ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai dash-to-panel gdrive)
 
 run_module() {
     local m="$1"
@@ -672,6 +728,7 @@ run_module() {
         vscode)       install_vscode ;;
         utils)        install_utils ;;
         local-ai)     install_local_ai ;;
+        dash-to-panel) install_dash_to_panel ;;
         gdrive)       install_gdrive ;;
         *) warn "Module inconnu : $m" ;;
     esac
@@ -687,7 +744,8 @@ show_menu() {
     echo "  3) Chrome + lecteurs PDF   8) VS Code + extensions"
     echo "  4) Suite bureautique       9) Utilitaires"
     echo "  5) LaTeX complet          10) IA locale (Ollama)"
-    echo "                            11) Google Drive (rclone)"
+    echo "                           11) Dash to Panel (GNOME)"
+    echo "                           12) Google Drive (rclone)"
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -700,7 +758,7 @@ show_menu() {
             5) run_module latex ;;        6) run_module python ;;
             7) run_module web-mobile ;;   8) run_module vscode ;;
             9) run_module utils ;;        10) run_module local-ai ;;
-            11) run_module gdrive ;;
+            11) run_module dash-to-panel ;;  12) run_module gdrive ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
