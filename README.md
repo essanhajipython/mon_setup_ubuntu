@@ -30,6 +30,7 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 | `--utils` | htop, tmux, ripgrep, fzf, Timeshift, Flameshot, GIMP, VLC |
 | `--local-ai` | Ollama |
 | `--gdrive` | Google Drive via `rclone` (montage local automatique avec cache systemd) |
+| `--docker` | Docker + Docker Compose (via get.docker.com, utilisateur dans le groupe `docker`) |
 
 ```bash
 ./setup_ubuntu.sh                       # menu interactif
@@ -37,6 +38,8 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 ./setup_ubuntu.sh --ai --latex          # modules choisis
 ./setup_ubuntu.sh --retry-failed        # relance uniquement ce qui a échoué
 ./setup_ubuntu.sh --force --all         # réinstalle tout, même déjà marqué OK
+./setup_ubuntu.sh --headless --all      # tout sauf les modules GUI (Chrome, Office, Dash to Panel)
+./setup_ubuntu.sh --update              # met à jour tout l'existant (pipx, npm, pip, apt, TeX Live)
 ```
 
 ## Comportement

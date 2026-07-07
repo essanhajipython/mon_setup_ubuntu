@@ -40,6 +40,7 @@ log "Journal complet de cette exécution : $LOGFILE"
 STATE_FILE="$HOME/.setup_ubuntu_state"
 touch "$STATE_FILE"
 FORCE=0
+HEADLESS=0
 
 module_done()   { grep -qxF "$1" "$STATE_FILE" 2>/dev/null; }
 mark_done()     { grep -qxF "$1" "$STATE_FILE" 2>/dev/null || echo "$1" >> "$STATE_FILE"; }
@@ -405,6 +406,32 @@ EOF
         log "Alias xelatex-se / lualatex-se / latexmk-se ajoutés à ~/.bashrc."
     fi
 
+    # Test réel : compilation LaTeX avec minted pour vérifier que tout fonctionne
+    if command -v lualatex >/dev/null 2>&1; then
+        log "Test de compilation LaTeX avec minted..."
+        TEST_DIR=$(mktemp -d)
+        cat > "$TEST_DIR/test_minted.tex" <<'TMEOF'
+\documentclass{article}
+\usepackage[highlightmode=immediate]{minted}
+\begin{document}
+\begin{minted}{python}
+def hello():
+    print("Hello, minted!")
+\end{minted}
+\end{document}
+TMEOF
+        PATH="$HOME/.local/bin:$PATH" lualatex -shell-escape -interaction=nonstopmode -jobname="test_minted" "$TEST_DIR/test_minted.tex" >/dev/null 2>&1
+        if grep -q "Cannot highlight code\|minted.*Error" "$TEST_DIR/test_minted.log" 2>/dev/null; then
+            warn "minted ne fonctionne pas correctement — la coloration syntaxique sera absente."
+            warn "Consulte le log : $TEST_DIR/test_minted.log"
+            module_ok=0
+            FAILED_MODULES+=("latex")
+        else
+            ok "Compilation LaTeX + minted réussie (coloration OK)."
+        fi
+        rm -rf "$TEST_DIR"
+    fi
+
     # Vérification finale réelle (pas juste le code retour d'apt)
     if command -v xelatex >/dev/null 2>&1 && command -v lualatex >/dev/null 2>&1; then
         ok "LaTeX complet installé et vérifié (XeLaTeX + LuaLaTeX fonctionnels)."
@@ -746,9 +773,49 @@ EOF
 }
 
 ###############################################################################
+# 12. DOCKER
+###############################################################################
+install_docker() {
+    log "=== Docker ==="
+    local module_ok=1
+
+    if command -v docker >/dev/null 2>&1; then
+        ok "Docker déjà installé ($(docker --version 2>/dev/null))."
+    else
+        log "Installation de Docker (dépôt officiel)..."
+        if curl_retry "https://get.docker.com" | sh >/dev/null 2>&1; then
+            sudo usermod -aG docker "$USER" >/dev/null 2>&1 || true
+            if command -v docker >/dev/null 2>&1; then
+                ok "Docker installé."
+            else
+                warn "Docker : script exécuté mais binaire introuvable."
+                module_ok=0
+            fi
+        else
+            warn "Échec install Docker."
+            module_ok=0
+        fi
+    fi
+
+    if command -v docker-compose >/dev/null 2>&1 || docker compose version >/dev/null 2>&1; then
+        ok "Docker Compose déjà disponible."
+    else
+        log "Installation de Docker Compose plugin..."
+        apt_install docker-compose-plugin 2>/dev/null || warn "Docker Compose plugin non installé."
+    fi
+
+    if [[ "$module_ok" -eq 1 ]]; then
+        mark_done "docker"
+        warn "Déconnexion/reconnexion nécessaire pour utiliser docker sans sudo (ou exécute 'newgrp docker')."
+    else
+        FAILED_MODULES+=("docker")
+    fi
+}
+
+###############################################################################
 # MENU / DISPATCH
 ###############################################################################
-ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai dash-to-panel gdrive)
+ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai dash-to-panel gdrive docker)
 
 run_module() {
     local m="$1"
@@ -769,6 +836,7 @@ run_module() {
         local-ai)     install_local_ai ;;
         dash-to-panel) install_dash_to_panel ;;
         gdrive)       install_gdrive ;;
+        docker)       install_docker ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
@@ -785,6 +853,7 @@ show_menu() {
     echo "  5) LaTeX complet          10) IA locale (Ollama)"
     echo "                           11) Dash to Panel (GNOME)"
     echo "                           12) Google Drive (rclone)"
+    echo "                           13) Docker"
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -798,6 +867,7 @@ show_menu() {
             7) run_module web-mobile ;;   8) run_module vscode ;;
             9) run_module utils ;;        10) run_module local-ai ;;
             11) run_module dash-to-panel ;;  12) run_module gdrive ;;
+            13) run_module docker ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
@@ -818,8 +888,59 @@ retry_failed() {
 }
 
 ###############################################################################
+# 13. MISE À JOUR (pipx, npm, pip)
+###############################################################################
+run_update() {
+    log "=== Mise à jour de tout l'existant ==="
+
+    # pipx
+    if command -v pipx >/dev/null 2>&1; then
+        log "Mise à jour des paquets pipx..."
+        pipx upgrade-all 2>/dev/null || true
+        ok "pipx à jour."
+    fi
+
+    # npm global
+    if command -v npm >/dev/null 2>&1; then
+        log "Mise à jour des paquets npm globaux..."
+        npm update -g 2>/dev/null || true
+        ok "npm à jour."
+    fi
+
+    # pip venv scientifique
+    if [[ -x "$HOME/venvs/sci/bin/pip" ]]; then
+        log "Mise à jour du venv scientifique..."
+        "$HOME/venvs/sci/bin/pip" install -q --upgrade \
+            numpy scipy pandas matplotlib seaborn plotly sympy \
+            scikit-learn statsmodels numba \
+            jupyter jupyterlab notebook ipykernel \
+            reportlab edge-tts pydub openpyxl xlsxwriter \
+            requests beautifulsoup4 lxml tqdm 2>/dev/null || true
+        ok "Venv scientifique à jour."
+    fi
+
+    # apt
+    log "Mise à jour des paquets système (apt upgrade)..."
+    sudo apt update -y -qq >/dev/null 2>&1 || true
+    sudo apt upgrade -y -qq >/dev/null 2>&1 || true
+    ok "Système à jour."
+
+    # tlmgr (TeX Live)
+    if command -v tlmgr >/dev/null 2>&1; then
+        log "Mise à jour TeX Live..."
+        sudo tlmgr update --self --all >/dev/null 2>&1 || warn "Échec mise à jour TeX Live (pas bloquant)."
+        ok "TeX Live à jour."
+    fi
+
+    mark_done "update"
+    ok "Mise à jour terminée."
+}
+
+###############################################################################
 # POINT D'ENTRÉE
 ###############################################################################
+GUI_MODULES=(browser-pdf office dash-to-panel)
+
 main() {
     local args=("$@")
     local do_retry=0
@@ -827,6 +948,7 @@ main() {
     for a in "${args[@]}"; do
         [[ "$a" == "--force" ]] && FORCE=1
         [[ "$a" == "--retry-failed" ]] && do_retry=1
+        [[ "$a" == "--headless" ]] && HEADLESS=1
     done
 
     preflight
@@ -836,11 +958,24 @@ main() {
     elif [[ ${#args[@]} -eq 0 ]]; then
         show_menu
     elif [[ " ${args[*]} " == *" --all "* ]]; then
-        for m in "${ALL_MODULES[@]}"; do run_module "$m"; done
+        for m in "${ALL_MODULES[@]}"; do
+            if [[ "$HEADLESS" -eq 1 ]] && [[ " ${GUI_MODULES[*]} " == *" $m "* ]]; then
+                log "Mode headless — module '$m' ignoré (GUI)."
+                continue
+            fi
+            run_module "$m"
+        done
+    elif [[ " ${args[*]} " == *" --update "* ]]; then
+        run_update
     else
         for arg in "${args[@]}"; do
             [[ "$arg" == "--force" ]] && continue
+            [[ "$arg" == "--headless" ]] && continue
             module="${arg#--}"
+            if [[ "$HEADLESS" -eq 1 ]] && [[ " ${GUI_MODULES[*]} " == *" $module "* ]]; then
+                log "Mode headless — module '$module' ignoré (GUI)."
+                continue
+            fi
             run_module "$module"
         done
     fi

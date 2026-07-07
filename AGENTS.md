@@ -61,6 +61,9 @@ script installe lui-même via `apt`, `curl`/`wget`, `pip`, `npm`, `snap`.
 - **Flags CLI en tirets** (`--browser-pdf`, pas `--browser_pdf`) — norme
   POSIX, décision assumée par le propriétaire malgré sa préférence
   personnelle pour les underscores ailleurs (noms de dossiers/dépôts).
+- **Modules GUI** définis dans `GUI_MODULES=(browser-pdf office dash-to-panel)` :
+  tout module ajouté qui nécessite un environnement graphique doit y être listé
+  pour que le flag `--headless` puisse le filtrer.
 - **Variables et fonctions internes en snake_case** (`VENV_DIR`,
   `install_latex()`).
 - **Commentaires et messages utilisateur en français.**
