@@ -326,41 +326,46 @@ install_latex() {
         || module_ok=0
 
     # Patch latexminted pour compatibilité Python 3.14
-    # Le wheel latexminted 0.6.0 fourni par TeX Live 2025 est incompatible
-    # avec Python ≥3.14 (argparse n'accepte plus le kwarg 'color')
+    # Le wheel 0.6.0 fourni par TeX Live 2025 plante sur Python ≥3.14 :
+    #   TypeError: ArgParser.__init__() got an unexpected keyword argument 'color'
+    # Cause : argparse a changé dans Python 3.14 (passe de nouveaux kwargs).
+    # Solution : patcher le wheel localement et l'installer via pipx (sans sudo).
     if python3 -c "import sys; exit(0 if sys.version_info >= (3,14) else 1)" 2>/dev/null; then
-        log "Python ≥3.14 détecté — patch de latexminted nécessaire..."
-        WHL="/usr/share/texlive/texmf-dist/scripts/minted/latexminted-0.6.0-py3-none-any.whl"
-        if [[ -f "$WHL" ]] && ! latexminted --version 2>/dev/null | grep -q "0.7"; then
-            log "Installation de latexminted 0.7.1 via pipx (compatible Python 3.14)..."
-            pipx install --force latexminted 2>/dev/null || true
-            if command -v latexminted >/dev/null 2>&1; then
-                ok "latexminted patché et installé via pipx."
-            else
-                warn "Échec pipx, tentative de patch direct du wheel..."
-                TMP_DIR=$(mktemp -d)
-                cp "$WHL" "$TMP_DIR/"
-                cd "$TMP_DIR" || true
-                python3 -c "
-import zipfile, os
-whl = 'latexminted-0.6.0-py3-none-any.whl'
+        WHL_SRC="/usr/share/texlive/texmf-dist/scripts/minted/latexminted-0.6.0-py3-none-any.whl"
+        if [[ -f "$WHL_SRC" ]] && ! latexminted config --help >/dev/null 2>&1; then
+            log "Python ≥3.14 détecté — patch de latexminted..."
+            TMP_DIR=$(mktemp -d)
+            WHL_PATCHED="$TMP_DIR/latexminted-0.6.0-py3-none-any.whl"
+            cp "$WHL_SRC" "$WHL_PATCHED"
+            cat > "$TMP_DIR/patch_wheel.py" << 'PYEOF'
+import zipfile, sys, re
+whl = sys.argv[1]
 with zipfile.ZipFile(whl, 'r') as z:
-    files = {}
-    for f in z.namelist():
-        files[f] = z.read(f)
+    files = {f: z.read(f) for f in z.namelist()}
 content = files['latexminted/cmdline.py'].decode('utf-8')
-old = 'class ArgParser(argparse.ArgumentParser):\r\n    def __init__(self, *, prog: str):\r\n        super().__init__(\r\n            prog=prog,\r\n            allow_abbrev=False,\r\n            formatter_class=argparse.RawTextHelpFormatter\r\n        )'
-new = 'class ArgParser(argparse.ArgumentParser):\r\n    def __init__(self, *, prog: str, **kwargs):\r\n        super().__init__(\r\n            prog=prog,\r\n            allow_abbrev=False,\r\n            formatter_class=argparse.RawTextHelpFormatter,\r\n            **kwargs\r\n        )'
-files['latexminted/cmdline.py'] = content.replace(old, new).encode('utf-8')
+# Remplace le constructeur pour accepter **kwargs (Python 3.14+)
+content = re.sub(
+    r'def __init__\(self, \*, prog: str\):',
+    'def __init__(self, *, prog: str, **kwargs):',
+    content,
+)
+# Ajoute **kwargs dans l'appel super().__init__()
+content = re.sub(
+    r'(formatter_class=argparse\.RawTextHelpFormatter)\s*\)',
+    r'\1, **kwargs)',
+    content,
+)
+files['latexminted/cmdline.py'] = content.encode('utf-8')
 with zipfile.ZipFile(whl, 'w', zipfile.ZIP_DEFLATED) as z:
     for fname, data in files.items():
         z.writestr(fname, data)
-"
-                sudo cp "$TMP_DIR/$(basename "$WHL")" "$WHL" 2>/dev/null && ok "Wheel latexminted patché." || warn "Patch manuel échoué (sudo nécessaire)."
-                rm -rf "$TMP_DIR"
-            fi
-        else
-            ok "latexminted déjà compatible."
+PYEOF
+            python3 "$TMP_DIR/patch_wheel.py" "$WHL_PATCHED" && \
+            pipx install --force "$WHL_PATCHED" >/dev/null 2>&1 && \
+            latexminted config --help >/dev/null 2>&1 && \
+            ok "latexminted patché et installé via pipx." || \
+            warn "Échec du patch latexminted (les couleurs minted seront absentes)."
+            rm -rf "$TMP_DIR"
         fi
     fi
 
