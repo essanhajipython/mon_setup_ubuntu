@@ -73,6 +73,11 @@ Yoga) : plusieurs galères rencontrées et maintenant corrigées dans le script 
   (Google Fonts).
 - `python3.14-venv` nécessaire en plus de `python3-venv` sur les versions
   Python très récentes → **corrigé**, les deux sont tentés.
+- `latexminted` 0.6.0 (TeX Live 2025) incompatible avec Python ≥3.14 : l'API
+  `argparse` a changé, le kwarg `color` n'est plus accepté par `ArgumentParser`,
+  ce qui fait échouer silencieusement `minted` (code Python sans couleurs).
+  → **Corrigé** : patch du wheel `latexminted` + installation via `pipx` de la
+  version 0.7.1 (compatible) dans la fonction `install_latex()`.
 
 Voir `AGENTS.md` dans ce dépôt pour le contexte technique complet destiné à
 un agent IA (Claude Code, OpenCode...) en cas de nouvelle panne à corriger.

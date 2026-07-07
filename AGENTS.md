@@ -100,6 +100,15 @@ script installe lui-même via `apt`, `curl`/`wget`, `pip`, `npm`, `snap`.
    connexions → pas de correction automatique dans le script (dépend du
    réseau), mais `install_vscode()` a un fallback `.deb` qui contourne le
    problème dans la majorité des cas.
+8. **`latexminted` 0.6.0 incompatible avec Python ≥3.14** (Ubuntu 26.04) : le
+   wheel fourni par TeX Live 2025 plante avec
+   `TypeError: ArgParser.__init__() got an unexpected keyword argument 'color'`
+   à cause d'un changement dans l'API `argparse` de Python 3.14. Le symptôme
+   est que `minted` ne colore pas le code (pas d'erreur fatale, juste
+   `Cannot highlight code` silencieux). → **Corrigé** dans `install_latex()`
+   par : (a) tentative d'install via `pipx install latexminted` (version 0.7.1
+   compatible), (b) si échec, patch direct du wheel système avec `**kwargs`.
+   Vérifier avec `latexminted config --help` après installation.
 
 ## Comment diagnostiquer une nouvelle panne
 

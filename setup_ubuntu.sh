@@ -319,10 +319,49 @@ install_latex() {
     warn "texlive-full pèse plusieurs Go, ça peut prendre du temps..."
     local module_ok=1
 
-    apt_install texlive-full latexmk biber python3-pygments \
+    apt_install texlive-full latexmk biber python3-pygments pipx \
         fonts-noto fonts-noto-color-emoji fonts-noto-cjk \
         fonts-texgyre fonts-freefont-ttf texlive-lang-arabic texlive-lang-french \
         || module_ok=0
+
+    # Patch latexminted pour compatibilité Python 3.14
+    # Le wheel latexminted 0.6.0 fourni par TeX Live 2025 est incompatible
+    # avec Python ≥3.14 (argparse n'accepte plus le kwarg 'color')
+    if python3 -c "import sys; exit(0 if sys.version_info >= (3,14) else 1)" 2>/dev/null; then
+        log "Python ≥3.14 détecté — patch de latexminted nécessaire..."
+        WHL="/usr/share/texlive/texmf-dist/scripts/minted/latexminted-0.6.0-py3-none-any.whl"
+        if [[ -f "$WHL" ]] && ! latexminted --version 2>/dev/null | grep -q "0.7"; then
+            log "Installation de latexminted 0.7.1 via pipx (compatible Python 3.14)..."
+            pipx install --force latexminted 2>/dev/null || true
+            if command -v latexminted >/dev/null 2>&1; then
+                ok "latexminted patché et installé via pipx."
+            else
+                warn "Échec pipx, tentative de patch direct du wheel..."
+                TMP_DIR=$(mktemp -d)
+                cp "$WHL" "$TMP_DIR/"
+                cd "$TMP_DIR" || true
+                python3 -c "
+import zipfile, os
+whl = 'latexminted-0.6.0-py3-none-any.whl'
+with zipfile.ZipFile(whl, 'r') as z:
+    files = {}
+    for f in z.namelist():
+        files[f] = z.read(f)
+content = files['latexminted/cmdline.py'].decode('utf-8')
+old = 'class ArgParser(argparse.ArgumentParser):\r\n    def __init__(self, *, prog: str):\r\n        super().__init__(\r\n            prog=prog,\r\n            allow_abbrev=False,\r\n            formatter_class=argparse.RawTextHelpFormatter\r\n        )'
+new = 'class ArgParser(argparse.ArgumentParser):\r\n    def __init__(self, *, prog: str, **kwargs):\r\n        super().__init__(\r\n            prog=prog,\r\n            allow_abbrev=False,\r\n            formatter_class=argparse.RawTextHelpFormatter,\r\n            **kwargs\r\n        )'
+files['latexminted/cmdline.py'] = content.replace(old, new).encode('utf-8')
+with zipfile.ZipFile(whl, 'w', zipfile.ZIP_DEFLATED) as z:
+    for fname, data in files.items():
+        z.writestr(fname, data)
+"
+                sudo cp "$TMP_DIR/$(basename "$WHL")" "$WHL" 2>/dev/null && ok "Wheel latexminted patché." || warn "Patch manuel échoué (sudo nécessaire)."
+                rm -rf "$TMP_DIR"
+            fi
+        else
+            ok "latexminted déjà compatible."
+        fi
+    fi
 
     # Amiri : nom de paquet variable selon la version d'Ubuntu -> on essaie
     # plusieurs candidats sans faire échouer tout le module si aucun ne matche.
