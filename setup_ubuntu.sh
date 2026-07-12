@@ -663,6 +663,11 @@ install_web_mobile() {
         run_installer "nvm" "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh" bash || warn "Échec install nvm."
     fi
     export NVM_DIR="$HOME/.nvm"
+    # IMPORTANT : nvm.sh n'est PAS compatible avec `set -u` (il référence des
+    # variables non définies). Sous nounset, le sourcer tue le script SILENCIEUSEMENT
+    # (sortie immédiate juste après "nvm déjà installé"). On désactive donc nounset
+    # le temps de charger et d'utiliser nvm, puis on le réactive.
+    set +u
     # shellcheck disable=SC1091
     [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
@@ -680,6 +685,7 @@ install_web_mobile() {
         warn "nvm non chargé — relance un nouveau terminal puis 'nvm install --lts'."
         module_ok=0
     fi
+    set -u   # réactive nounset pour la suite du script
 
     # Mobile : Flutter (snap peut échouer si problème réseau IPv6 -> pas fatal)
     if command -v flutter >/dev/null 2>&1 || snap list 2>/dev/null | grep -q flutter; then
