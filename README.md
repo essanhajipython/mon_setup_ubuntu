@@ -4,9 +4,14 @@ Script d'installation automatique de mon environnement de travail complet sur
 Ubuntu : outils IA en CLI, LaTeX poussé, Python scientifique, dev Web/Mobile,
 bureautique, utilitaires.
 
-## Utilisation rapide (sur un PC neuf)
+## Utilisation rapide (sur un PC neuf, Ubuntu fraîchement installé)
+
+Ce dépôt est **public** et ne contient aucun secret : sur une machine vierge, le
+clone se fait **sans aucune authentification** (ni mot de passe, ni token, ni clé
+SSH). C'est voulu — c'est le tout premier truc qu'on installe.
 
 ```bash
+sudo apt update && sudo apt install -y git      # git n'est pas là par défaut
 git clone https://github.com/essanhajipython/mon_setup_ubuntu.git
 cd mon_setup_ubuntu
 chmod +x setup_ubuntu.sh
@@ -14,6 +19,18 @@ chmod +x setup_ubuntu.sh
 ```
 
 Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
+
+> **Note (auth) :** en HTTPS, GitHub ne demande d'identifiants que pour *pousser*
+> ou pour un dépôt privé — et le « mot de passe » attendu n'est PAS celui du site
+> mais un *token (PAT)* depuis 2021. Comme ce dépôt est public, le clone n'en a
+> pas besoin. Pour **pousser** tes modifs depuis une de tes machines, configure
+> SSH une fois :
+>
+> ```bash
+> ssh-keygen -t ed25519 -C "abdelhakessanhaji@gmail.com"   # Entrée à toutes les questions
+> cat ~/.ssh/id_ed25519.pub    # -> à coller dans GitHub > Settings > SSH and GPG keys
+> git remote set-url origin git@github.com:essanhajipython/mon_setup_ubuntu.git
+> ```
 
 ## Modules disponibles
 
