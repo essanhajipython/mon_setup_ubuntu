@@ -375,9 +375,40 @@ install_ai_clis() {
         fi
     fi
 
+    # --- Codex CLI (OpenAI) : installeur officiel, ne dépend PAS de Node ---
+    if command -v codex >/dev/null 2>&1; then
+        ok "Codex CLI déjà installé ($(codex --version 2>/dev/null))."
+    else
+        log "Installation de Codex CLI (OpenAI)..."
+        if run_installer "Codex CLI" "https://chatgpt.com/codex/install.sh" sh; then
+            export PATH="$HOME/.local/bin:$PATH"
+            command -v codex >/dev/null 2>&1 && ok "Codex CLI installé." \
+                || warn "Codex CLI : script exécuté mais binaire introuvable (relance un terminal)."
+        else
+            warn "Échec install Codex CLI (pas bloquant pour le module ai)."
+        fi
+    fi
+
+    # --- Grok Build CLI (xAI) : installeur officiel, ne dépend PAS de Node ---
+    # (l'utilisation nécessite un abonnement SuperGrok / X Premium+.)
+    if command -v grok-build >/dev/null 2>&1; then
+        ok "Grok Build CLI déjà installé."
+    else
+        log "Installation de Grok Build CLI (xAI)..."
+        if run_installer "Grok Build CLI" "https://x.ai/cli/install.sh" bash; then
+            export PATH="$HOME/.grok-build/bin:$HOME/.local/bin:$PATH"
+            command -v grok-build >/dev/null 2>&1 && ok "Grok Build CLI installé (grok-build login pour t'authentifier)." \
+                || warn "Grok Build CLI : script exécuté mais binaire introuvable (relance un terminal)."
+        else
+            warn "Échec install Grok Build CLI (pas bloquant pour le module ai)."
+        fi
+    fi
+    # NB : le CLI GLM de Z.ai (@z_ai/coding-helper, alias 'chelper') a besoin de
+    # npm ; il est installé dans le module web-mobile, après Node.
+
     if [[ "$module_ok" -eq 1 ]]; then
         mark_done "ai"
-        warn "Pense à lancer 'claude', 'opencode' et 'agy' une première fois pour t'authentifier."
+        warn "Pense à lancer 'claude', 'opencode', 'agy', 'codex', 'grok-build' une première fois pour t'authentifier."
     else
         FAILED_MODULES+=("ai")
     fi
@@ -675,6 +706,12 @@ install_web_mobile() {
         nvm install --lts >/dev/null 2>&1
         nvm use --lts >/dev/null 2>&1
         npm install -g pnpm yarn >/dev/null 2>&1
+        # CLI GLM de Z.ai (@z_ai/coding-helper, commande 'chelper') : charge le
+        # plan GLM Coding dans Claude Code / OpenCode. Installé ici car il a besoin
+        # de npm. JAMAIS de 'sudo npm -g' (règle du repo) -> npm de nvm sans sudo.
+        npm install -g @z_ai/coding-helper >/dev/null 2>&1 \
+            && ok "Z.ai coding-helper installé (lance 'chelper')." \
+            || warn "Z.ai coding-helper non installé (pas bloquant)."
         if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
             ok "Node.js LTS + npm/pnpm/yarn installés."
         else
@@ -966,13 +1003,47 @@ install_docker() {
 }
 
 ###############################################################################
+# 13. APPS IA DESKTOP (Claude Desktop — app officielle Anthropic pour Linux)
+###############################################################################
+install_desktop_ai() {
+    log "=== Apps IA desktop (Claude Desktop) ==="
+    local module_ok=1
+
+    if dpkg -s claude-desktop >/dev/null 2>&1 || command -v claude-desktop >/dev/null 2>&1; then
+        ok "Claude Desktop déjà installé."
+    else
+        log "Installation de Claude Desktop (dépôt apt officiel Anthropic)..."
+        # Clé de signature + dépôt officiels (downloads.claude.ai) : install et
+        # surtout mises à jour via apt upgrade ensuite.
+        sudo curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc \
+            https://downloads.claude.ai/claude-desktop/key.asc 2>/dev/null || \
+            warn "Téléchargement de la clé Claude Desktop échoué."
+        echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
+            | sudo tee /etc/apt/sources.list.d/claude-desktop.list >/dev/null
+        APT_UPDATED=0   # forcer un apt update pour prendre en compte le nouveau dépôt
+        if apt_install claude-desktop; then
+            ok "Claude Desktop installé (lance 'claude-desktop' ou depuis le menu d'applis)."
+        else
+            warn "Échec install Claude Desktop (nécessite Ubuntu 22.04+ / Debian 12+, x86_64 ou arm64)."
+            module_ok=0
+        fi
+    fi
+
+    if [[ "$module_ok" -eq 1 ]]; then
+        mark_done "desktop-ai"
+    else
+        FAILED_MODULES+=("desktop-ai")
+    fi
+}
+
+###############################################################################
 # MENU / DISPATCH
 ###############################################################################
 # Ordre optimisé : d'abord les modules importants ET rapides (on veut les outils
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf gdrive docker local-ai dash-to-panel office web-mobile latex)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel office web-mobile latex)
 
 run_module() {
     local m="$1"
@@ -994,6 +1065,7 @@ run_module() {
         dash-to-panel) install_dash_to_panel ;;
         gdrive)       install_gdrive ;;
         docker)       install_docker ;;
+        desktop-ai)   install_desktop_ai ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
@@ -1004,13 +1076,14 @@ show_menu() {
     echo "   Configuration de ton environnement Ubuntu — choisis les modules"
     echo "======================================================================"
     echo "  1) Prérequis système       6) Python scientifique"
-    echo "  2) IA CLI (Claude/OC/agy)  7) Dev Web + Mobile"
-    echo "  3) Chrome + lecteurs PDF   8) VS Code + extensions"
-    echo "  4) Suite bureautique       9) Utilitaires"
-    echo "  5) LaTeX complet          10) IA locale (Ollama)"
-    echo "                           11) Dash to Panel (GNOME)"
+    echo "  2) IA CLI (Claude/OC/agy/  7) Dev Web + Mobile"
+    echo "     Codex/Grok/Z.ai)        8) VS Code + extensions"
+    echo "  3) Chrome + lecteurs PDF   9) Utilitaires"
+    echo "  4) Suite bureautique      10) IA locale (Ollama)"
+    echo "  5) LaTeX complet          11) Dash to Panel (GNOME)"
     echo "                           12) Google Drive (rclone)"
     echo "                           13) Docker"
+    echo "                           14) Claude Desktop (app)"
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -1024,7 +1097,7 @@ show_menu() {
             7) run_module web-mobile ;;   8) run_module vscode ;;
             9) run_module utils ;;        10) run_module local-ai ;;
             11) run_module dash-to-panel ;;  12) run_module gdrive ;;
-            13) run_module docker ;;
+            13) run_module docker ;;      14) run_module desktop-ai ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
@@ -1096,7 +1169,7 @@ run_update() {
 ###############################################################################
 # POINT D'ENTRÉE
 ###############################################################################
-GUI_MODULES=(browser-pdf office dash-to-panel)
+GUI_MODULES=(browser-pdf office dash-to-panel desktop-ai)
 
 main() {
     local args=("$@")
