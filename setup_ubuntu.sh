@@ -954,9 +954,41 @@ EOF
         module_ok=0
     fi
 
+    # Ajoute le dossier à la barre latérale du gestionnaire de fichiers (Nautilus/
+    # Nemo/Thunar lisent tous ce même fichier de favoris GTK). Idempotent.
+    local bookmarks="$HOME/.config/gtk-3.0/bookmarks"
+    mkdir -p "$(dirname "$bookmarks")"
+    touch "$bookmarks"
+    if ! grep -qF "file://$HOME/Google_Drive" "$bookmarks" 2>/dev/null; then
+        echo "file://$HOME/Google_Drive Google Drive" >> "$bookmarks"
+        ok "Raccourci « Google Drive » ajouté à la barre latérale du gestionnaire de fichiers."
+    fi
+
+    # L'AUTHENTIFICATION GOOGLE NE PEUT PAS ÊTRE AUTOMATISÉE : elle exige une
+    # connexion OAuth interactive dans un navigateur (fenêtre de login Google).
+    # On détecte juste si c'est déjà fait, et sinon on donne la marche à suivre.
+    if rclone listremotes 2>/dev/null | grep -qx "gdrive:"; then
+        ok "Compte Google Drive déjà configuré (remote 'gdrive' trouvé)."
+        systemctl --user start rclone-gdrive.service 2>/dev/null || true
+        sleep 2
+        if mountpoint -q "$HOME/Google_Drive" 2>/dev/null; then
+            ok "Google Drive monté sur ~/Google_Drive."
+        else
+            warn "Remote configuré mais montage non confirmé — relance : systemctl --user restart rclone-gdrive.service"
+        fi
+    else
+        warn "Compte Google pas encore connecté — étape MANUELLE obligatoire (connexion OAuth) :"
+        warn "  1) rclone config"
+        warn "     -> n (New remote) -> name: gdrive -> Storage: drive -> Entrée/Entrée/Entrée"
+        warn "     -> scope: 1 -> Entrée/Entrée -> Use web browser? y (le navigateur s'ouvre,"
+        warn "        connecte-toi à Google et clique Autoriser) -> n -> y -> q"
+        warn "  2) systemctl --user start rclone-gdrive.service"
+        warn "  3) ls ~/Google_Drive   (tes fichiers doivent apparaître)"
+        warn "Une fois fait, le montage redémarrera automatiquement à chaque session."
+    fi
+
     if [[ "$module_ok" -eq 1 ]]; then
         mark_done "gdrive"
-        warn "Pense à lancer 'rclone config' si ce n'est pas déjà fait pour authentifier le compte 'gdrive'."
     else
         FAILED_MODULES+=("gdrive")
     fi
