@@ -40,7 +40,21 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 ./setup_ubuntu.sh --force --all         # réinstalle tout, même déjà marqué OK
 ./setup_ubuntu.sh --headless --all      # tout sauf les modules GUI (Chrome, Office, Dash to Panel)
 ./setup_ubuntu.sh --update              # met à jour tout l'existant (pipx, npm, pip, apt, TeX Live)
+./setup_ubuntu.sh --yes --all           # 100% non interactif (aucune question), idéal "lance et pars"
 ```
+
+### Installation « lance et pars »
+
+```bash
+./setup_ubuntu.sh --all
+```
+
+Tu tapes ton mot de passe **une seule fois au tout début**, puis tu peux
+laisser la machine finir seule : plus aucune question ne t'est posée
+(`--all` active automatiquement le mode non interactif). Les outils IA et de
+dev sont installés en premier (rapides), les gros paquets — bureautique,
+mobile, puis `texlive-full` (plusieurs Go) — passent en dernier avec un
+indicateur de progression pour ne pas paraître figés.
 
 ## Comportement
 

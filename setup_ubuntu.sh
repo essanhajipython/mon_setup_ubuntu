@@ -25,6 +25,22 @@
 
 set -uo pipefail
 
+# ------------------------------- Mode non interactif global -----------------
+# Empêche apt/dpkg de poser des questions bloquantes pendant une install longue
+# (needrestart, conflits de fichiers de conf, redémarrage de services...).
+# C'est LA clé pour qu'une exécution --all aille jusqu'au bout sans surveillance.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a          # applique les redémarrages de services sans demander
+export NEEDRESTART_SUSPEND=1       # ne suspend jamais l'exécution pour needrestart
+export APT_LISTCHANGES_FRONTEND=none
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+          -o Dpkg::Use-Pty=0)
+
+# ASSUME_YES=1 => aucune question interactive (impliqué par --all et --yes).
+# Détecté aussi automatiquement si on tourne sans terminal (stdin non tty).
+ASSUME_YES=0
+[[ -t 0 ]] || ASSUME_YES=1
+
 # ------------------------------- Couleurs / logs ----------------------------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 log()   { echo -e "${BLUE}[INFO]${NC} $*"; }
@@ -62,19 +78,43 @@ if ! command -v apt >/dev/null 2>&1; then
     exit 1
 fi
 
+log "Ce script a besoin des droits administrateur. Tape ton mot de passe UNE SEULE"
+log "fois maintenant : il sera gardé actif automatiquement, tu peux ensuite partir."
 sudo -v || { err "Impossible d'obtenir les droits sudo. Abandon."; exit 1; }
-( while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null & )
+# Garde la session sudo active tant que le script tourne (installs longues).
+( while true; do sudo -n true; sleep 60; kill -0 "$$" 2>/dev/null || exit; done 2>/dev/null & )
 
 ###############################################################################
 # PRÉFLIGHT : réseau, DNS, dpkg cassé — évite 90% des galères déjà vécues
 ###############################################################################
+# repair_dns : (re)bascule sur des DNS publics fiables. Réutilisable — appelée
+# en préflight ET automatiquement pendant les téléchargements si la résolution
+# de noms retombe en panne (cause n°1 des échecs de CLI IA la dernière fois).
+repair_dns() {
+    local iface
+    iface=$(ip route 2>/dev/null | awk '/default/ {print $5; exit}')
+    if [[ -n "${iface:-}" ]] && command -v resolvectl >/dev/null 2>&1; then
+        sudo resolvectl dns "$iface" 8.8.8.8 1.1.1.1 >/dev/null 2>&1 || true
+        sudo resolvectl flush-caches >/dev/null 2>&1 || true
+    fi
+    # Filet de sécurité : /etc/resolv.conf direct si resolvectl n'a pas suffi
+    if ! getent hosts github.com >/dev/null 2>&1; then
+        if [[ -w /etc/resolv.conf ]] || sudo test -w /etc/resolv.conf 2>/dev/null; then
+            printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\n' | sudo tee /etc/resolv.conf >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
+# dns_ok : test rapide de résolution (plusieurs domaines, tolérant).
+dns_ok() {
+    getent hosts github.com >/dev/null 2>&1 || getent hosts claude.ai >/dev/null 2>&1
+}
+
 preflight() {
     log "=== Vérifications préalables (réseau / DNS / dpkg) ==="
 
     # 1) Réparer un dpkg interrompu AVANT de commencer quoi que ce soit
-    if sudo dpkg --configure -a >/dev/null 2>&1; then
-        :
-    fi
+    sudo dpkg --configure -a >/dev/null 2>&1 || true
     sudo apt --fix-broken install -y -qq >/dev/null 2>&1 || true
 
     # 2) Connectivité IP brute
@@ -82,26 +122,25 @@ preflight() {
         ok "Connectivité réseau OK."
     else
         warn "Pas de réponse à 8.8.8.8. Vérifie ton câble/WiFi avant de continuer."
-        read -rp "Continuer quand même ? (o/N) : " REPLY
-        [[ "$REPLY" =~ ^[Oo]$ ]] || exit 1
+        if [[ "$ASSUME_YES" -eq 1 ]]; then
+            warn "Mode non interactif : on continue quand même (certaines étapes échoueront peut-être)."
+        else
+            read -rp "Continuer quand même ? (o/N) : " REPLY
+            [[ "$REPLY" =~ ^[Oo]$ ]] || exit 1
+        fi
     fi
 
     # 3) Résolution DNS — la panne qu'on a eue la dernière fois
-    if getent hosts github.com >/dev/null 2>&1; then
+    if dns_ok; then
         ok "Résolution DNS OK."
     else
-        warn "Le DNS ne répond pas (github.com introuvable). Tentative de correction automatique..."
-        IFACE=$(ip route | awk '/default/ {print $5; exit}')
-        if [[ -n "${IFACE:-}" ]] && command -v resolvectl >/dev/null 2>&1; then
-            sudo resolvectl dns "$IFACE" 8.8.8.8 1.1.1.1 >/dev/null 2>&1 || true
-            sudo resolvectl flush-caches >/dev/null 2>&1 || true
-        fi
+        warn "Le DNS ne répond pas. Tentative de correction automatique..."
+        repair_dns
         sleep 2
-        if getent hosts github.com >/dev/null 2>&1; then
+        if dns_ok; then
             ok "DNS réparé (bascule sur 8.8.8.8 / 1.1.1.1)."
         else
-            warn "DNS toujours en échec. Le script va continuer mais certaines étapes vont probablement échouer."
-            warn "Essaie de changer de réseau ou de régler le DNS manuellement, puis relance avec --retry-failed."
+            warn "DNS toujours en échec. Le script continuera et re-tentera de le réparer à chaque téléchargement."
         fi
     fi
 
@@ -113,7 +152,7 @@ preflight() {
 download_retry() {
     local url="$1" dest="$2" tries="${3:-3}" attempt=1
     while (( attempt <= tries )); do
-        if wget -q --timeout=20 -O "$dest" "$url"; then
+        if wget -q --timeout=30 --tries=1 -O "$dest" "$url"; then
             # Vérifie que le fichier n'est pas vide/corrompu (taille > 1 Ko)
             if [[ -s "$dest" ]] && [[ $(stat -c%s "$dest" 2>/dev/null || echo 0) -gt 1024 ]]; then
                 return 0
@@ -121,7 +160,9 @@ download_retry() {
         fi
         warn "  Tentative $attempt/$tries échouée pour $url, nouvel essai..."
         rm -f "$dest"
-        sleep 2
+        # Si c'est un problème de DNS, on tente de le réparer avant de réessayer.
+        dns_ok || { warn "  DNS en panne — réparation..."; repair_dns; }
+        sleep $(( attempt * 2 ))   # backoff progressif
         ((attempt++))
     done
     return 1
@@ -130,36 +171,86 @@ download_retry() {
 curl_retry() {
     local url="$1" tries="${2:-3}" attempt=1
     while (( attempt <= tries )); do
-        if curl -fsSL --connect-timeout 15 "$url"; then
+        # --max-time borne la durée TOTALE : un serveur qui traîne ne bloque
+        # jamais indéfiniment le script (contrairement à un simple connect-timeout).
+        if curl -fsSL --connect-timeout 15 --max-time 120 "$url"; then
             return 0
         fi
         warn "  Tentative $attempt/$tries échouée pour $url..."
-        sleep 2
+        dns_ok || { warn "  DNS en panne — réparation..."; repair_dns; }
+        sleep $(( attempt * 2 ))
         ((attempt++))
     done
     return 1
+}
+
+# run_installer <nom> <url> <interpréteur: bash|sh> — exécute un installeur
+# "curl | bash" de façon robuste : téléchargement borné dans le temps + exécution
+# bornée dans le temps (timeout dur) pour qu'un installeur qui "hang" n'immobilise
+# jamais tout le script. Retourne 0 si succès.
+run_installer() {
+    local name="$1" url="$2" shell_bin="${3:-bash}" script
+    script=$(mktemp --suffix=.sh)
+    if curl_retry "$url" > "$script" && [[ -s "$script" ]]; then
+        # 8 min max pour un installeur : largement assez, jamais infini.
+        if timeout 480 "$shell_bin" "$script" >/dev/null 2>&1; then
+            rm -f "$script"; return 0
+        fi
+        warn "  Installeur $name : exécution échouée ou expirée (timeout)."
+    else
+        warn "  Installeur $name : téléchargement impossible."
+    fi
+    rm -f "$script"; return 1
 }
 
 APT_UPDATED=0
 apt_update_once() {
     if [[ "$APT_UPDATED" -eq 0 ]]; then
         log "Mise à jour des dépôts apt..."
-        sudo apt update -y -qq || warn "apt update a rencontré des erreurs (certains dépôts sont peut-être injoignables)."
+        dns_ok || repair_dns
+        sudo apt "${APT_OPTS[@]}" update -y -qq || warn "apt update a rencontré des erreurs (certains dépôts sont peut-être injoignables)."
         APT_UPDATED=1
     fi
 }
 
-# apt_install <paquet1> <paquet2> ... — installe ET vérifie réellement chaque paquet
+# pkg_present <paquet> — vrai si le paquet est réellement installé. Tolérant aux
+# paquets transitoires/virtuels : on accepte aussi bien l'entrée dpkg installée
+# que l'état "installed" rapporté par apt-cache policy.
+pkg_present() {
+    dpkg -s "$1" >/dev/null 2>&1 && return 0
+    LANG=C apt-cache policy "$1" 2>/dev/null | grep -q 'Installed: [^(]' && return 0
+    return 1
+}
+
+# with_heartbeat <message> <commande...> — exécute une commande longue en
+# affichant un point toutes les 20 s pour prouver que ça avance (évite de croire
+# que le script est figé sur texlive-full ou un gros téléchargement).
+with_heartbeat() {
+    local msg="$1"; shift
+    log "$msg (peut être long — un point toutes les 20 s tant que ça travaille)"
+    # Le battement de cœur tourne en arrière-plan ; la commande reste au PREMIER
+    # plan pour que ses effets (FAILED_PACKAGES, APT_UPDATED...) restent visibles.
+    ( while true; do sleep 20; printf '.'; done ) &
+    local hb=$!
+    "$@"
+    local rc=$?
+    kill "$hb" 2>/dev/null; wait "$hb" 2>/dev/null
+    printf '\n'
+    return $rc
+}
+
+# apt_install <paquet1> <paquet2> ... — installe ET vérifie réellement chaque
+# paquet (échec = module en échec). Réessaie une fois avec réparation DNS.
 apt_install() {
     apt_update_once
-    sudo DEBIAN_FRONTEND=noninteractive apt install -y -qq "$@" >/dev/null 2>&1
+    sudo apt "${APT_OPTS[@]}" install -y -qq "$@" >/dev/null 2>&1 || {
+        dns_ok || repair_dns
+        sudo apt "${APT_OPTS[@]}" install -y -qq "$@" >/dev/null 2>&1 || true
+    }
 
     local pkg missing=()
     for pkg in "$@"; do
-        # certains paquets n'ont pas d'entrée dpkg avec exactement ce nom (ex: métapaquets) -> on vérifie large
-        if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-            missing+=("$pkg")
-        fi
+        pkg_present "$pkg" || missing+=("$pkg")
     done
 
     if (( ${#missing[@]} > 0 )); then
@@ -170,18 +261,60 @@ apt_install() {
     return 0
 }
 
+# apt_install_optional <paquet1> <paquet2> ... — comme apt_install mais NE FAIT
+# PAS échouer le module : sert aux paquets secondaires (polices, extras) dont
+# l'absence ne doit pas marquer tout un module comme raté.
+apt_install_optional() {
+    apt_update_once
+    sudo apt "${APT_OPTS[@]}" install -y -qq "$@" >/dev/null 2>&1 || true
+    local pkg
+    for pkg in "$@"; do
+        pkg_present "$pkg" || warn "  Paquet optionnel non installé : $pkg (pas bloquant)."
+    done
+    return 0
+}
+
+# apt_install_firstof <cmd_de_test> <candidat1> <candidat2> ... — installe le
+# PREMIER candidat disponible dans les dépôts. Utile quand un paquet a changé de
+# nom selon la version d'Ubuntu (ex: p7zip-full -> 7zip sur 26.04).
+apt_install_firstof() {
+    local test_cmd="$1"; shift
+    if [[ -n "$test_cmd" ]] && command -v "$test_cmd" >/dev/null 2>&1; then
+        return 0   # déjà présent (vérif par commande)
+    fi
+    apt_update_once
+    local cand
+    for cand in "$@"; do
+        if LANG=C apt-cache show "$cand" >/dev/null 2>&1; then
+            apt_install "$cand" && return 0
+        fi
+    done
+    warn "  Aucun des candidats installable : $*"
+    return 1
+}
+
 ###############################################################################
 # 0. PRÉREQUIS DE BASE
 ###############################################################################
 install_prereqs() {
     log "=== Prérequis système ==="
-    if apt_install curl wget git git-lfs ca-certificates gnupg lsb-release \
+    # Paquets CRITIQUES : sans eux le reste du script casse (curl, git...).
+    local critical_ok=1
+    apt_install curl wget git git-lfs ca-certificates gnupg lsb-release \
         software-properties-common apt-transport-https build-essential \
-        unzip zip p7zip-full; then
+        unzip zip || critical_ok=0
+
+    # 7-Zip : le nom a changé selon la version d'Ubuntu
+    # (p7zip-full sur ≤24.04, 7zip sur 26.04). On teste par la commande `7z`/`7za`.
+    if ! command -v 7z >/dev/null 2>&1 && ! command -v 7za >/dev/null 2>&1; then
+        apt_install_firstof "" 7zip p7zip-full || warn "7-Zip non installé (pas bloquant)."
+    fi
+
+    if [[ "$critical_ok" -eq 1 ]]; then
         ok "Prérequis installés."
         mark_done "prereqs"
     else
-        warn "Certains prérequis ont échoué (voir ci-dessus)."
+        err "Des prérequis CRITIQUES ont échoué (curl/git/...) — le reste risque d'échouer."
         FAILED_MODULES+=("prereqs")
     fi
 }
@@ -193,11 +326,19 @@ install_ai_clis() {
     log "=== Claude Code, OpenCode, Antigravity CLI ==="
     local module_ok=1
 
+    # Le PATH doit inclure ~/.local/bin AVANT de vérifier les binaires, sinon un
+    # outil déjà installé (mais pas dans le PATH courant) serait réinstallé pour rien.
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    fi
+
     if command -v claude >/dev/null 2>&1; then
         ok "Claude Code déjà installé ($(claude --version 2>/dev/null))."
     else
         log "Installation de Claude Code..."
-        if curl_retry "https://claude.ai/install.sh" | bash >/dev/null 2>&1; then
+        if run_installer "Claude Code" "https://claude.ai/install.sh" bash; then
+            export PATH="$HOME/.local/bin:$PATH"
             command -v claude >/dev/null 2>&1 && ok "Claude Code installé." || { warn "Claude Code : script exécuté mais binaire introuvable."; module_ok=0; }
         else
             warn "Échec install Claude Code après plusieurs tentatives."
@@ -209,7 +350,11 @@ install_ai_clis() {
         ok "OpenCode déjà installé ($(opencode --version 2>/dev/null))."
     else
         log "Installation d'OpenCode..."
-        if curl_retry "https://opencode.ai/install" | bash >/dev/null 2>&1; then
+        if run_installer "OpenCode" "https://opencode.ai/install" bash; then
+            # OpenCode s'installe dans ~/.opencode/bin (PAS ~/.local/bin) et ajoute
+            # lui-même son PATH à ~/.bashrc : on l'ajoute au PATH courant pour
+            # vérifier correctement sans faux négatif.
+            export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
             command -v opencode >/dev/null 2>&1 && ok "OpenCode installé." || { warn "OpenCode : script exécuté mais binaire introuvable."; module_ok=0; }
         else
             warn "Échec install OpenCode après plusieurs tentatives."
@@ -221,18 +366,14 @@ install_ai_clis() {
         ok "Antigravity CLI déjà installé ($(agy --version 2>/dev/null))."
     else
         log "Installation d'Antigravity CLI (agy)..."
-        if curl_retry "https://antigravity.google/cli/install.sh" | bash >/dev/null 2>&1; then
+        if run_installer "Antigravity CLI" "https://antigravity.google/cli/install.sh" bash; then
+            export PATH="$HOME/.local/bin:$PATH"
             command -v agy >/dev/null 2>&1 && ok "Antigravity CLI installé." || { warn "Antigravity CLI : script exécuté mais binaire introuvable."; module_ok=0; }
         else
             warn "Échec install Antigravity CLI (serveur Google parfois indisponible temporairement)."
             module_ok=0
         fi
     fi
-
-    if ! grep -qxF 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
 
     if [[ "$module_ok" -eq 1 ]]; then
         mark_done "ai"
@@ -320,7 +461,8 @@ install_latex() {
     warn "texlive-full pèse plusieurs Go, ça peut prendre du temps..."
     local module_ok=1
 
-    apt_install texlive-full latexmk biber python3-pygments pipx \
+    with_heartbeat "Installation de texlive-full + paquets LaTeX" \
+        apt_install texlive-full latexmk biber python3-pygments pipx \
         fonts-noto fonts-noto-color-emoji fonts-noto-cjk \
         fonts-texgyre fonts-freefont-ttf texlive-lang-arabic texlive-lang-french \
         || module_ok=0
@@ -518,7 +660,7 @@ install_web_mobile() {
         ok "nvm déjà installé."
     else
         log "Installation de nvm..."
-        curl_retry "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh" | bash >/dev/null 2>&1
+        run_installer "nvm" "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh" bash || warn "Échec install nvm."
     fi
     export NVM_DIR="$HOME/.nvm"
     # shellcheck disable=SC1091
@@ -543,15 +685,15 @@ install_web_mobile() {
     if command -v flutter >/dev/null 2>&1 || snap list 2>/dev/null | grep -q flutter; then
         ok "Flutter déjà installé."
     else
-        log "Installation de Flutter (snap)..."
-        sudo snap install flutter --classic >/dev/null 2>&1 || warn "Échec install Flutter via snap (réessaie plus tard : sudo snap install flutter --classic)."
+        log "Installation de Flutter (snap, ça peut prendre plusieurs minutes)..."
+        timeout 900 sudo snap install flutter --classic >/dev/null 2>&1 || warn "Échec/timeout install Flutter via snap (réessaie plus tard : sudo snap install flutter --classic)."
     fi
 
     if snap list 2>/dev/null | grep -q android-studio; then
         ok "Android Studio déjà installé."
     else
-        log "Installation d'Android Studio (snap)..."
-        sudo snap install android-studio --classic >/dev/null 2>&1 || warn "Échec install Android Studio via snap."
+        log "Installation d'Android Studio (snap, gros téléchargement)..."
+        timeout 1200 sudo snap install android-studio --classic >/dev/null 2>&1 || warn "Échec/timeout install Android Studio via snap."
     fi
 
     apt_install openjdk-17-jdk || true
@@ -662,7 +804,7 @@ install_local_ai() {
         mark_done "local-ai"
     else
         log "Installation d'Ollama..."
-        if curl_retry "https://ollama.com/install.sh" | sh >/dev/null 2>&1 && command -v ollama >/dev/null 2>&1; then
+        if run_installer "Ollama" "https://ollama.com/install.sh" sh && command -v ollama >/dev/null 2>&1; then
             ok "Ollama installé."
             mark_done "local-ai"
         else
@@ -788,7 +930,7 @@ install_docker() {
         ok "Docker déjà installé ($(docker --version 2>/dev/null))."
     else
         log "Installation de Docker (dépôt officiel)..."
-        if curl_retry "https://get.docker.com" | sh >/dev/null 2>&1; then
+        if run_installer "Docker" "https://get.docker.com" sh; then
             sudo usermod -aG docker "$USER" >/dev/null 2>&1 || true
             if command -v docker >/dev/null 2>&1; then
                 ok "Docker installé."
@@ -820,7 +962,11 @@ install_docker() {
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
-ALL_MODULES=(prereqs ai browser-pdf office latex python web-mobile vscode utils local-ai dash-to-panel gdrive docker)
+# Ordre optimisé : d'abord les modules importants ET rapides (on veut les outils
+# IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
+# mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
+# sans surveillance.
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf gdrive docker local-ai dash-to-panel office web-mobile latex)
 
 run_module() {
     local m="$1"
@@ -954,6 +1100,9 @@ main() {
         [[ "$a" == "--force" ]] && FORCE=1
         [[ "$a" == "--retry-failed" ]] && do_retry=1
         [[ "$a" == "--headless" ]] && HEADLESS=1
+        [[ "$a" == "--yes" || "$a" == "-y" ]] && ASSUME_YES=1
+        # --all est par nature non surveillé : on force le mode non interactif.
+        [[ "$a" == "--all" ]] && ASSUME_YES=1
     done
 
     preflight
@@ -976,6 +1125,7 @@ main() {
         for arg in "${args[@]}"; do
             [[ "$arg" == "--force" ]] && continue
             [[ "$arg" == "--headless" ]] && continue
+            [[ "$arg" == "--yes" || "$arg" == "-y" ]] && continue
             module="${arg#--}"
             if [[ "$HEADLESS" -eq 1 ]] && [[ " ${GUI_MODULES[*]} " == *" $module "* ]]; then
                 log "Mode headless — module '$module' ignoré (GUI)."

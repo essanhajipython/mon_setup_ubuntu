@@ -113,6 +113,38 @@ script installe lui-même via `apt`, `curl`/`wget`, `pip`, `npm`, `snap`.
    compatible), (b) si échec, patch direct du wheel système avec `**kwargs`.
    Vérifier avec `latexminted config --help` après installation.
 
+9. **Panne DNS PENDANT les téléchargements** (le préflight passe, puis la
+   résolution retombe en panne en plein `curl | bash`) → a fait échouer les 3
+   CLI IA (`curl: (28) Resolving timed out`). → **Corrigé** : `curl_retry()` et
+   `download_retry()` appellent `repair_dns()` (bascule 8.8.8.8/1.1.1.1 via
+   `resolvectl`, sinon écriture directe de `/etc/resolv.conf`) entre chaque
+   tentative, avec backoff progressif.
+10. **`p7zip-full` renommé `7zip` sur Ubuntu 26.04** → `dpkg -s p7zip-full`
+    échouait et marquait tout le module *prereqs* en échec. → **Corrigé** :
+    `apt_install_firstof "7z" 7zip p7zip-full` (essaie le 1er candidat dispo,
+    vérifie par la commande `7z`). Distinction paquets critiques/optionnels.
+11. **OpenCode s'installe dans `~/.opencode/bin`, pas `~/.local/bin`** → le
+    `command -v opencode` juste après install échouait (faux négatif). →
+    **Corrigé** : on ajoute `~/.opencode/bin` au PATH avant de vérifier.
+12. **Installeurs `curl | bash` qui traînent/pendent** (serveur lent, réseau) →
+    pouvaient bloquer le script longtemps. → **Corrigé** : helper `run_installer()`
+    avec `timeout 480` (dur) + `curl --max-time 120`. Snap Flutter/Android Studio
+    bornés par `timeout` aussi.
+13. **texlive-full paraît figé** (plusieurs Go, sortie masquée) → **Corrigé** :
+    `with_heartbeat()` affiche un point toutes les 20 s pendant les commandes
+    longues.
+14. **Questions apt bloquantes** (needrestart, conflits de conf) en exécution non
+    surveillée → **Corrigé** : env global `DEBIAN_FRONTEND=noninteractive`,
+    `NEEDRESTART_MODE=a`, options dpkg `--force-confdef --force-confold`, flag
+    `--yes`/`-y` (impliqué par `--all`) et auto-détection stdin non-tty.
+
+## Ordre des modules (volontaire)
+
+`ALL_MODULES` est ordonné pour installer d'abord les outils importants ET rapides
+(prereqs, ai, python, utils, vscode) puis les gros téléchargements (office,
+web-mobile avec Android Studio, et enfin texlive-full qui est le plus lourd).
+Ne pas remettre `latex`/`office` en tête sans raison.
+
 ## Comment diagnostiquer une nouvelle panne
 
 1. Lire le dernier log : `ls -t ~/setup_ubuntu_*.log | head -1`
