@@ -137,6 +137,20 @@ script installe lui-même via `apt`, `curl`/`wget`, `pip`, `npm`, `snap`.
     surveillée → **Corrigé** : env global `DEBIAN_FRONTEND=noninteractive`,
     `NEEDRESTART_MODE=a`, options dpkg `--force-confdef --force-confold`, flag
     `--yes`/`-y` (impliqué par `--all`) et auto-détection stdin non-tty.
+15. **L'installeur Codex CLI lit `/dev/tty` directement** pour son prompt
+    "Start Codex now?", ce qui contourne la redirection `>/dev/null 2>&1` de
+    `run_installer()` (donc pas de `timeout` visible ni de log) et bloquait le
+    script indéfiniment en attendant une réponse invisible. → **Corrigé** :
+    `export CODEX_NON_INTERACTIVE=1` avant l'appel (variable documentée par
+    l'installeur officiel).
+16. **Le binaire de Grok Build CLI s'appelle `grok`, pas `grok-build`**, installé
+    dans `~/.grok/bin` (pas `~/.grok-build/bin`) → `command -v grok-build`
+    échouait toujours après une install réussie (faux négatif). → **Corrigé** :
+    vérification et PATH alignés sur `grok` / `~/.grok/bin`.
+17. **Le `.deb` d'OpenCode Desktop s'appelle `opencode`, pas `opencode-desktop`**,
+    installé dans `/opt/OpenCode` → même piège de faux négatif potentiel.
+    Détection dans `install_desktop_ai()` basée sur `dpkg -s opencode` ou
+    `-d /opt/OpenCode`.
 
 ## Ordre des modules (volontaire)
 

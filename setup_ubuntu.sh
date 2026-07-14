@@ -380,6 +380,10 @@ install_ai_clis() {
         ok "Codex CLI déjà installé ($(codex --version 2>/dev/null))."
     else
         log "Installation de Codex CLI (OpenAI)..."
+        # CODEX_NON_INTERACTIVE : l'installeur officiel demande "Start Codex now?"
+        # en lisant /dev/tty directement (contourne la redirection stdout de
+        # run_installer), ce qui bloquait le script en silence. On saute le prompt.
+        export CODEX_NON_INTERACTIVE=1
         if run_installer "Codex CLI" "https://chatgpt.com/codex/install.sh" sh; then
             export PATH="$HOME/.local/bin:$PATH"
             command -v codex >/dev/null 2>&1 && ok "Codex CLI installé." \
@@ -391,13 +395,14 @@ install_ai_clis() {
 
     # --- Grok Build CLI (xAI) : installeur officiel, ne dépend PAS de Node ---
     # (l'utilisation nécessite un abonnement SuperGrok / X Premium+.)
-    if command -v grok-build >/dev/null 2>&1; then
+    if command -v grok >/dev/null 2>&1; then
         ok "Grok Build CLI déjà installé."
     else
         log "Installation de Grok Build CLI (xAI)..."
+        # Le binaire installé s'appelle "grok" (pas "grok-build"), dans ~/.grok/bin.
         if run_installer "Grok Build CLI" "https://x.ai/cli/install.sh" bash; then
-            export PATH="$HOME/.grok-build/bin:$HOME/.local/bin:$PATH"
-            command -v grok-build >/dev/null 2>&1 && ok "Grok Build CLI installé (grok-build login pour t'authentifier)." \
+            export PATH="$HOME/.grok/bin:$HOME/.local/bin:$PATH"
+            command -v grok >/dev/null 2>&1 && ok "Grok Build CLI installé (grok login pour t'authentifier)." \
                 || warn "Grok Build CLI : script exécuté mais binaire introuvable (relance un terminal)."
         else
             warn "Échec install Grok Build CLI (pas bloquant pour le module ai)."
@@ -408,7 +413,7 @@ install_ai_clis() {
 
     if [[ "$module_ok" -eq 1 ]]; then
         mark_done "ai"
-        warn "Pense à lancer 'claude', 'opencode', 'agy', 'codex', 'grok-build' une première fois pour t'authentifier."
+        warn "Pense à lancer 'claude', 'opencode', 'agy', 'codex', 'grok' une première fois pour t'authentifier."
     else
         FAILED_MODULES+=("ai")
     fi
@@ -1035,10 +1040,10 @@ install_docker() {
 }
 
 ###############################################################################
-# 13. APPS IA DESKTOP (Claude Desktop — app officielle Anthropic pour Linux)
+# 13. APPS IA DESKTOP (Claude Desktop, OpenCode Desktop — apps officielles pour Linux)
 ###############################################################################
 install_desktop_ai() {
-    log "=== Apps IA desktop (Claude Desktop) ==="
+    log "=== Apps IA desktop (Claude Desktop, OpenCode Desktop) ==="
     local module_ok=1
 
     if dpkg -s claude-desktop >/dev/null 2>&1 || command -v claude-desktop >/dev/null 2>&1; then
@@ -1059,6 +1064,29 @@ install_desktop_ai() {
             warn "Échec install Claude Desktop (nécessite Ubuntu 22.04+ / Debian 12+, x86_64 ou arm64)."
             module_ok=0
         fi
+    fi
+
+    if [[ -d /opt/OpenCode ]] || dpkg -s opencode >/dev/null 2>&1; then
+        ok "OpenCode Desktop déjà installé."
+    else
+        log "Installation d'OpenCode Desktop (beta, .deb officiel opencode.ai)..."
+        # Pas de dépôt apt : opencode.ai/download ne fournit qu'un .deb en
+        # téléchargement direct, donc install ponctuelle (pas de maj via apt upgrade).
+        # Le paquet .deb s'appelle "opencode" (pas "opencode-desktop") et installe
+        # dans /opt/OpenCode ; le lanceur enregistré est "ai.opencode.desktop".
+        local oc_deb; oc_deb="$(mktemp --suffix=.deb)"
+        if curl -fsSL "https://opencode.ai/download/stable/linux-x64-deb" -o "$oc_deb"; then
+            if sudo apt-get install -y "$oc_deb"; then
+                ok "OpenCode Desktop installé (lance-le depuis le menu d'applis, ou 'ai.opencode.desktop')."
+            else
+                warn "Échec install OpenCode Desktop (dépendances .deb)."
+                module_ok=0
+            fi
+        else
+            warn "Téléchargement d'OpenCode Desktop échoué."
+            module_ok=0
+        fi
+        rm -f "$oc_deb"
     fi
 
     if [[ "$module_ok" -eq 1 ]]; then

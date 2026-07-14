@@ -38,7 +38,7 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 |---|---|
 | `--prereqs` | curl, wget, git, build-essential... |
 | `--ai` | CLI IA : Claude Code, OpenCode, Antigravity (agy), **Codex (OpenAI)**, **Grok Build (xAI)**. Le CLI GLM de Z.ai (`chelper`) est installé avec `--web-mobile` (besoin de npm). |
-| `--desktop-ai` | **Claude Desktop** (app officielle Anthropic pour Linux, via apt) |
+| `--desktop-ai` | **Claude Desktop** (app officielle Anthropic pour Linux, via apt) + **OpenCode Desktop** (beta, .deb officiel opencode.ai) |
 | `--browser-pdf` | Chrome, Evince (rapide), Xournal++ / Okular (annotation) |
 | `--office` | LibreOffice + OnlyOffice (Word/Excel/PPT) |
 | `--latex` | texlive-full, XeLaTeX, LuaLaTeX, minted, polices Amiri/Cairo/TeX Gyre |
