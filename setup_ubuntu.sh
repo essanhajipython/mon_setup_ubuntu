@@ -919,6 +919,51 @@ install_dash_to_panel() {
 }
 
 ###############################################################################
+# 10bis. RACCOURCIS CLAVIER GNOME (Super+E -> gestionnaire de fichiers)
+###############################################################################
+install_gnome_shortcuts() {
+    log "=== Raccourcis clavier GNOME (Super+E -> Fichiers) ==="
+    local module_ok=1
+    local base="org.gnome.settings-daemon.plugins.media-keys"
+    local key_path="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/super-e-files/"
+
+    if ! command -v gsettings >/dev/null 2>&1; then
+        warn "gsettings introuvable (pas un environnement GNOME ?) — raccourci non configuré."
+        FAILED_MODULES+=("gnome-shortcuts")
+        return
+    fi
+
+    # Ajoute notre chemin à la liste existante sans écraser d'éventuels autres
+    # raccourcis personnalisés déjà configurés par l'utilisateur.
+    local current new_list
+    current=$(gsettings get "$base" custom-keybindings 2>/dev/null)
+    if [[ "$current" != *"$key_path"* ]]; then
+        if [[ -z "$current" || "$current" == "@as []" || "$current" == "[]" ]]; then
+            new_list="['$key_path']"
+        else
+            new_list="${current%]}, '$key_path']"
+        fi
+        gsettings set "$base" custom-keybindings "$new_list"
+    fi
+
+    gsettings set "$base.custom-keybinding:$key_path" name 'Open Files'
+    gsettings set "$base.custom-keybinding:$key_path" command 'nautilus'
+    gsettings set "$base.custom-keybinding:$key_path" binding '<Super>e'
+
+    if gsettings get "$base.custom-keybinding:$key_path" binding 2>/dev/null | grep -q "Super>e"; then
+        ok "Raccourci Super+E -> Fichiers (nautilus) configuré, comme sous Windows."
+        mark_done "gnome-shortcuts"
+    else
+        err "Le raccourci Super+E n'a pas pu être vérifié après configuration."
+        module_ok=0
+    fi
+
+    if [[ "$module_ok" -ne 1 ]]; then
+        FAILED_MODULES+=("gnome-shortcuts")
+    fi
+}
+
+###############################################################################
 # 11. GOOGLE DRIVE (rclone + systemd mount)
 ###############################################################################
 install_gdrive() {
@@ -1103,7 +1148,7 @@ install_desktop_ai() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel office web-mobile latex)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex)
 
 run_module() {
     local m="$1"
@@ -1123,6 +1168,7 @@ run_module() {
         utils)        install_utils ;;
         local-ai)     install_local_ai ;;
         dash-to-panel) install_dash_to_panel ;;
+        gnome-shortcuts) install_gnome_shortcuts ;;
         gdrive)       install_gdrive ;;
         docker)       install_docker ;;
         desktop-ai)   install_desktop_ai ;;
@@ -1144,6 +1190,7 @@ show_menu() {
     echo "                           12) Google Drive (rclone)"
     echo "                           13) Docker"
     echo "                           14) Claude Desktop (app)"
+    echo "                           15) Raccourci Super+E -> Fichiers (GNOME)"
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -1158,6 +1205,7 @@ show_menu() {
             9) run_module utils ;;        10) run_module local-ai ;;
             11) run_module dash-to-panel ;;  12) run_module gdrive ;;
             13) run_module docker ;;      14) run_module desktop-ai ;;
+            15) run_module gnome-shortcuts ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
@@ -1229,7 +1277,7 @@ run_update() {
 ###############################################################################
 # POINT D'ENTRÉE
 ###############################################################################
-GUI_MODULES=(browser-pdf office dash-to-panel desktop-ai)
+GUI_MODULES=(browser-pdf office dash-to-panel desktop-ai gnome-shortcuts)
 
 main() {
     local args=("$@")
