@@ -1143,7 +1143,7 @@ install_desktop_ai() {
 
 # --- skill:setup-ubuntu id=jupyter-notebook ---
 ###############################################################################
-# MODULE (skill:setup-ubuntu) — Jupyter Notebook (pipx)
+# MODULE (skill:setup-ubuntu) — Jupyter Notebook + packages scientifiques (pipx)
 ###############################################################################
 install_jupyter_notebook() {
     if command -v jupyter-notebook >/dev/null 2>&1; then
@@ -1164,6 +1164,18 @@ install_jupyter_notebook() {
             return
         fi
     fi
+
+    log "Injection des packages scientifiques dans l'environnement Jupyter..."
+    SCIENCE_PKGS=(pandas matplotlib scipy scikit-learn sympy seaborn)
+    ALL_OK=true
+    for pkg in "${SCIENCE_PKGS[@]}"; do
+        if pipx inject jupyter "$pkg" 2>/dev/null; then
+            ok "$pkg injecté dans Jupyter."
+        else
+            warn "Échec ou déjà présent : $pkg"
+        fi
+    done
+
     mark_done "jupyter-notebook"
 }
 # --- skill:setup-ubuntu end:jupyter-notebook ---
@@ -1197,7 +1209,7 @@ declare -A MODULE_LABELS=(
     [gdrive]="Google Drive (rclone)"
     [docker]="Docker"
     [desktop-ai]="Apps IA desktop (Claude Desktop, OpenCode Desktop)"
-    [jupyter-notebook]="Jupyter Notebook (pipx)"
+    [jupyter-notebook]="Jupyter Notebook + packages scientifiques (pipx)"
 )
 
 run_module() {
