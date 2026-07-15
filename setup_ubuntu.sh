@@ -1141,6 +1141,33 @@ install_desktop_ai() {
     fi
 }
 
+# --- skill:setup-ubuntu id=jupyter-notebook ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — Jupyter Notebook (pipx)
+###############################################################################
+install_jupyter_notebook() {
+    if command -v jupyter-notebook >/dev/null 2>&1; then
+        ok "Jupyter Notebook déjà installé ($(jupyter-notebook --version 2>/dev/null || echo 'version inconnue'))."
+    else
+        log "Installation de Jupyter Notebook via pipx..."
+        if command -v pipx >/dev/null 2>&1; then
+            if pipx install jupyter --include-deps; then
+                ok "Jupyter Notebook installé via pipx."
+            else
+                err "Échec de l'installation de Jupyter Notebook via pipx."
+                FAILED_MODULES+=("jupyter-notebook")
+                return
+            fi
+        else
+            err "pipx introuvable. Installe pipx d'abord (apt install pipx)."
+            FAILED_MODULES+=("jupyter-notebook")
+            return
+        fi
+    fi
+    mark_done "jupyter-notebook"
+}
+# --- skill:setup-ubuntu end:jupyter-notebook ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1148,7 +1175,7 @@ install_desktop_ai() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1170,6 +1197,7 @@ declare -A MODULE_LABELS=(
     [gdrive]="Google Drive (rclone)"
     [docker]="Docker"
     [desktop-ai]="Apps IA desktop (Claude Desktop, OpenCode Desktop)"
+    [jupyter-notebook]="Jupyter Notebook (pipx)"
 )
 
 run_module() {
@@ -1194,6 +1222,7 @@ run_module() {
         gdrive)       install_gdrive ;;
         docker)       install_docker ;;
         desktop-ai)   install_desktop_ai ;;
+        jupyter-notebook) install_jupyter_notebook ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
