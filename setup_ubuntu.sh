@@ -1150,6 +1150,28 @@ install_desktop_ai() {
 # sans surveillance.
 ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex)
 
+# Libellés affichés dans le menu interactif, tenus à jour en parallèle de
+# ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
+# show_menu) : ajouter un module ne demande jamais de renuméroter le menu à
+# la main, ce qui est la source d'erreur historique de cette section.
+declare -A MODULE_LABELS=(
+    [prereqs]="Prérequis système"
+    [ai]="IA CLI (Claude/OpenCode/Antigravity/Codex/Grok/Z.ai)"
+    [browser-pdf]="Chrome + lecteurs PDF"
+    [office]="Suite bureautique (Word/Excel/PPT)"
+    [latex]="LaTeX complet"
+    [python]="Python scientifique"
+    [web-mobile]="Dev Web + Mobile"
+    [vscode]="VS Code + extensions"
+    [utils]="Utilitaires"
+    [local-ai]="IA locale (Ollama)"
+    [dash-to-panel]="Dash to Panel (GNOME)"
+    [gnome-shortcuts]="Raccourci Super+E -> Fichiers (GNOME)"
+    [gdrive]="Google Drive (rclone)"
+    [docker]="Docker"
+    [desktop-ai]="Apps IA desktop (Claude Desktop, OpenCode Desktop)"
+)
+
 run_module() {
     local m="$1"
     if [[ "$FORCE" -eq 0 ]] && module_done "$m"; then
@@ -1181,16 +1203,11 @@ show_menu() {
     echo "======================================================================"
     echo "   Configuration de ton environnement Ubuntu — choisis les modules"
     echo "======================================================================"
-    echo "  1) Prérequis système       6) Python scientifique"
-    echo "  2) IA CLI (Claude/OC/agy/  7) Dev Web + Mobile"
-    echo "     Codex/Grok/Z.ai)        8) VS Code + extensions"
-    echo "  3) Chrome + lecteurs PDF   9) Utilitaires"
-    echo "  4) Suite bureautique      10) IA locale (Ollama)"
-    echo "  5) LaTeX complet          11) Dash to Panel (GNOME)"
-    echo "                           12) Google Drive (rclone)"
-    echo "                           13) Docker"
-    echo "                           14) Claude Desktop (app)"
-    echo "                           15) Raccourci Super+E -> Fichiers (GNOME)"
+    local i=1 m
+    for m in "${ALL_MODULES[@]}"; do
+        printf "  %2d) %s\n" "$i" "${MODULE_LABELS[$m]:-$m}"
+        ((i++))
+    done
     echo "  A) TOUT installer          R) Relancer seulement les échecs précédents"
     echo "  Q) Quitter"
     echo "======================================================================"
@@ -1198,18 +1215,17 @@ show_menu() {
 
     for c in "${CHOICES[@]}"; do
         case "$c" in
-            1) run_module prereqs ;;      2) run_module ai ;;
-            3) run_module browser-pdf ;;  4) run_module office ;;
-            5) run_module latex ;;        6) run_module python ;;
-            7) run_module web-mobile ;;   8) run_module vscode ;;
-            9) run_module utils ;;        10) run_module local-ai ;;
-            11) run_module dash-to-panel ;;  12) run_module gdrive ;;
-            13) run_module docker ;;      14) run_module desktop-ai ;;
-            15) run_module gnome-shortcuts ;;
             [Aa]) for m in "${ALL_MODULES[@]}"; do run_module "$m"; done ;;
             [Rr]) retry_failed ;;
             [Qq]) log "À bientôt !"; exit 0 ;;
-            *) warn "Choix ignoré : $c" ;;
+            ''|*[!0-9]*) warn "Choix ignoré : $c" ;;
+            *)
+                if (( c >= 1 && c <= ${#ALL_MODULES[@]} )); then
+                    run_module "${ALL_MODULES[$((c - 1))]}"
+                else
+                    warn "Choix ignoré : $c"
+                fi
+                ;;
         esac
     done
 }
