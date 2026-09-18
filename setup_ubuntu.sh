@@ -1211,6 +1211,48 @@ install_gcloud() {
 }
 # --- skill:setup-ubuntu end:gcloud ---
 
+# --- skill:setup-ubuntu id=zcode ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — ZCode (desktop + CLI)
+###############################################################################
+install_zcode() {
+    if dpkg -s zcode >/dev/null 2>&1; then
+        ok "ZCode déjà installé."
+    else
+        log "Installation de ZCode (desktop + CLI, .deb officiel)..."
+        # Pas de dépôt apt : zcode.z.ai ne fournit qu'un .deb en téléchargement
+        # direct (voir https://zcode.z.ai/en, section All Downloads), donc install
+        # ponctuelle (pas de maj via apt upgrade). Version épinglée : la monter
+        # quand une version plus récente sort.
+        local zc_deb; zc_deb="$(mktemp --suffix=.deb)"
+        if download_retry "https://cdn-zcode.z.ai/zcode/electron/releases/3.12.3/linux-x64/ZCode-3.12.3-linux-x64.deb" "$zc_deb"; then
+            if sudo apt-get install -y "$zc_deb"; then
+                # Le CLI headless (resources/glm/zcode.cjs) cherche son provider
+                # intégré sous resources/glm/provider/ alors que le .deb le livre
+                # sous resources/config/provider/ : copie constatée nécessaire le
+                # 2026-09-18, à re-vérifier à chaque montée de version.
+                sudo mkdir -p /opt/ZCode/resources/glm/provider
+                sudo cp /opt/ZCode/resources/config/provider/zcode-builtin.json \
+                    /opt/ZCode/resources/glm/provider/zcode-builtin.json
+                ok "ZCode installé (menu d'applis ; CLI : node /opt/ZCode/resources/glm/zcode.cjs --version)."
+            else
+                warn "Échec install ZCode (dépendances .deb)."
+                FAILED_MODULES+=("zcode")
+                rm -f "$zc_deb"
+                return
+            fi
+        else
+            warn "Téléchargement de ZCode échoué."
+            FAILED_MODULES+=("zcode")
+            rm -f "$zc_deb"
+            return
+        fi
+        rm -f "$zc_deb"
+    fi
+    mark_done "zcode"
+}
+# --- skill:setup-ubuntu end:zcode ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1218,7 +1260,7 @@ install_gcloud() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1242,6 +1284,7 @@ declare -A MODULE_LABELS=(
     [desktop-ai]="Apps IA desktop (Claude Desktop, OpenCode Desktop)"
     [jupyter-notebook]="Jupyter Notebook + packages scientifiques (pipx)"
     [gcloud]="Google Cloud SDK (gcloud)"
+    [zcode]="ZCode (desktop + CLI)"
 )
 
 run_module() {
@@ -1268,6 +1311,7 @@ run_module() {
         desktop-ai)   install_desktop_ai ;;
         jupyter-notebook) install_jupyter_notebook ;;
         gcloud) install_gcloud ;;
+        zcode) install_zcode ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
