@@ -1180,6 +1180,37 @@ install_jupyter_notebook() {
 }
 # --- skill:setup-ubuntu end:jupyter-notebook ---
 
+# --- skill:setup-ubuntu id=gcloud ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — Google Cloud SDK (gcloud)
+###############################################################################
+install_gcloud() {
+    if [ -f "$HOME/google-cloud-sdk/bin/gcloud" ]; then
+        ok "Google Cloud SDK déjà installé."
+    else
+        log "Installation de Google Cloud SDK..."
+        export CLOUDSDK_PYTHON=""
+        export PIP_BREAK_SYSTEM_PACKAGES=1
+        curl -fsSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir="$HOME"
+        if [ -f "$HOME/google-cloud-sdk/bin/gcloud" ]; then
+            source "$HOME/google-cloud-sdk/path.bash.inc"
+            if ! grep -q "google-cloud-sdk/path.bash.inc" "$HOME/.bashrc"; then
+                echo "" >> "$HOME/.bashrc"
+                echo "# Google Cloud SDK" >> "$HOME/.bashrc"
+                echo 'source ~/google-cloud-sdk/path.bash.inc' >> "$HOME/.bashrc"
+                echo 'source ~/google-cloud-sdk/completion.bash.inc' >> "$HOME/.bashrc"
+            fi
+            ok "Google Cloud SDK installé."
+        else
+            warn "Échec install Google Cloud SDK."
+            FAILED_MODULES+=("gcloud")
+            return
+        fi
+    fi
+    mark_done "gcloud"
+}
+# --- skill:setup-ubuntu end:gcloud ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1187,7 +1218,7 @@ install_jupyter_notebook() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1210,6 +1241,7 @@ declare -A MODULE_LABELS=(
     [docker]="Docker"
     [desktop-ai]="Apps IA desktop (Claude Desktop, OpenCode Desktop)"
     [jupyter-notebook]="Jupyter Notebook + packages scientifiques (pipx)"
+    [gcloud]="Google Cloud SDK (gcloud)"
 )
 
 run_module() {
@@ -1235,6 +1267,7 @@ run_module() {
         docker)       install_docker ;;
         desktop-ai)   install_desktop_ai ;;
         jupyter-notebook) install_jupyter_notebook ;;
+        gcloud) install_gcloud ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
