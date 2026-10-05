@@ -1253,6 +1253,82 @@ install_zcode() {
 }
 # --- skill:setup-ubuntu end:zcode ---
 
+# --- skill:setup-ubuntu id=poste ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — Poste : GitHub, workspace, réglages, connexions, projets
+###############################################################################
+install_poste() {
+    # Passage d'un PC à l'autre : GitHub CLI, dépôt privé abdelhak-workspace (skills, réglages), puis
+    # scripts/poste.py du workspace : réglages des outils, projets clonés et installés (Mizan…), connexions.
+    # À lancer après les modules ai, gcloud et gdrive, dont il connecte les comptes.
+    local espace="$HOME/abdelhak-workspace" module_ok=1
+    if command -v gh >/dev/null 2>&1; then
+        ok "GitHub CLI déjà installé."
+    else
+        log "Installation de GitHub CLI (dépôt apt officiel cli.github.com)..."
+        local cle; cle="$(mktemp)"
+        if download_retry "https://cli.github.com/packages/githubcli-archive-keyring.gpg" "$cle"; then
+            sudo mkdir -p -m 755 /etc/apt/keyrings
+            sudo install -m 644 "$cle" /etc/apt/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+            APT_UPDATED=0
+            apt_install gh
+        fi
+        rm -f "$cle"
+        if command -v gh >/dev/null 2>&1; then
+            ok "GitHub CLI installé."
+        else
+            warn "Échec install GitHub CLI."
+            FAILED_MODULES+=("poste")
+            return
+        fi
+    fi
+
+    if gh auth status >/dev/null 2>&1; then
+        ok "GitHub : déjà connecté."
+    elif [[ "$HEADLESS" -eq 1 ]]; then
+        warn "GitHub : connexion à faire (gh auth login --web --git-protocol https), puis relancer --poste."
+        FAILED_MODULES+=("poste")
+        return
+    else
+        log "Connexion à GitHub : un code s'affiche, à saisir dans le navigateur..."
+        if gh auth login --web --git-protocol https && gh auth setup-git; then
+            ok "GitHub : connecté."
+        else
+            warn "Connexion GitHub échouée : relancer ./setup_ubuntu.sh --poste."
+            FAILED_MODULES+=("poste")
+            return
+        fi
+    fi
+
+    if [[ -d "$espace/.git" ]]; then
+        ok "abdelhak-workspace déjà présent."
+    else
+        log "Clonage du dépôt privé abdelhak-workspace..."
+        if ! gh repo clone essanhajipython/abdelhak-workspace "$espace"; then
+            warn "Clonage d'abdelhak-workspace échoué."
+            FAILED_MODULES+=("poste")
+            return
+        fi
+    fi
+    (cd "$espace" && ./install.sh) || { warn "Liens des skills : relancer ~/abdelhak-workspace/install.sh."; module_ok=0; }
+
+    log "Réglages des outils et projets (scripts/poste.py appliquer)..."
+    python3 "$espace/scripts/poste.py" appliquer || module_ok=0
+    if [[ "$HEADLESS" -eq 0 ]]; then
+        log "Connexions qui manquent (navigateur), puis vérification du PC..."
+        python3 "$espace/scripts/poste.py" connexions || warn "Il reste des points à régler : python3 ~/abdelhak-workspace/scripts/poste.py"
+    fi
+
+    if [[ "$module_ok" -eq 1 ]]; then
+        mark_done "poste"
+    else
+        FAILED_MODULES+=("poste")
+    fi
+}
+# --- skill:setup-ubuntu end:poste ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1260,7 +1336,7 @@ install_zcode() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode poste)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1285,6 +1361,7 @@ declare -A MODULE_LABELS=(
     [jupyter-notebook]="Jupyter Notebook + packages scientifiques (pipx)"
     [gcloud]="Google Cloud SDK (gcloud)"
     [zcode]="ZCode (desktop + CLI)"
+    [poste]="Poste : GitHub, workspace, réglages, connexions, projets"
 )
 
 run_module() {
@@ -1312,6 +1389,7 @@ run_module() {
         jupyter-notebook) install_jupyter_notebook ;;
         gcloud) install_gcloud ;;
         zcode) install_zcode ;;
+        poste) install_poste ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
