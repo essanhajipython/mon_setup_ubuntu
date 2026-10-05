@@ -32,6 +32,19 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 > git remote set-url origin git@github.com:essanhajipython/mon_setup_ubuntu.git
 > ```
 
+## PC neuf sous Windows
+
+Une seule commande dans PowerShell (sans droits administrateur) installe Git, Python et GitHub CLI par
+winget, connecte GitHub, clone `abdelhak-workspace`, puis lance `scripts/poste.py` : programmes par winget
+(Claude Code, Google Cloud, Chrome, Google Drive, Codex, OpenCode), réglages, Mizan, connexions.
+
+```powershell
+irm https://raw.githubusercontent.com/essanhajipython/mon_setup_ubuntu/main/windows/installer.ps1 | iex
+```
+
+Relançable sans risque. Pour vérifier un PC plus tard, sous Windows comme sous Ubuntu :
+`python3 ~/abdelhak-workspace/scripts/poste.py` (sous Windows : `py -3`).
+
 ## Modules disponibles
 
 | Flag | Contenu |
@@ -49,6 +62,7 @@ Ouvre un **nouveau terminal** une fois terminé pour que tout soit dans le PATH.
 | `--local-ai` | Ollama |
 | `--gdrive` | Google Drive via `rclone` (montage local automatique avec cache systemd) |
 | `--docker` | Docker + Docker Compose (via get.docker.com, utilisateur dans le groupe `docker`) |
+| `--poste` | Passage d'un PC à l'autre : GitHub CLI et connexion, dépôt privé `abdelhak-workspace` (skills), puis `scripts/poste.py` : réglages des outils (télémétrie coupée…), projets clonés et installés (Mizan), connexions guidées. En dernier dans `--all`. |
 
 ```bash
 ./setup_ubuntu.sh                       # menu interactif
