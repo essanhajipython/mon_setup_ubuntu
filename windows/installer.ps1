@@ -3,8 +3,8 @@
 #   irm https://raw.githubusercontent.com/essanhajipython/mon_setup_ubuntu/main/windows/installer.ps1 | iex
 #
 # 1. Git, Python et GitHub CLI par winget ; 2. connexion a GitHub (code a saisir dans le navigateur) ;
-# 3. depot prive abdelhak-workspace ; 4. scripts/poste.py : autres programmes (winget), reglages des
-# outils, projets (Mizan), connexions, verification. Relancable sans risque : ce qui est fait est saute.
+# 3. depot prive abdelhak-workspace ; 4. scripts/poste.py tout : autres programmes (winget), reglages
+# des outils, skills, projets, connexions, Bureau restaure depuis Drive, sauvegarde horaire, verification. Relancable sans risque : ce qui est fait est saute.
 # Texte sans accents : Windows PowerShell 5.1 lit un fichier sans BOM en cp1252. Pas de
 # ErrorActionPreference = Stop : en 5.1, la moindre ligne d'un programme sur stderr deviendrait une erreur
 # fatale ; les codes de retour sont testes un a un.
@@ -35,6 +35,8 @@ Installer "Git.Git"
 Installer "Python.Python.3.14"
 Installer "GitHub.cli"
 Relire-Path
+# Fins de ligne LF comme sous Linux : sinon chaque fichier texte differe entre les deux systemes
+git config --global core.autocrlf false
 
 Etape "Connexion a GitHub"
 gh auth status *> $null
@@ -63,10 +65,6 @@ if (-not $python) {
 }
 if (-not $python) { throw "Python introuvable apres son installation : ouvrez un nouveau PowerShell et relancez." }
 
-Etape "Programmes, reglages et projets"
-& $python @arguments $poste appliquer
-Relire-Path
-
-Etape "Connexions (navigateur), puis verification"
-& $python @arguments $poste connexions
+Etape "Programmes, reglages, skills, projets, connexions, Bureau depuis Drive, verification"
+& $python @arguments $poste tout
 Write-Host "`nPour verifier plus tard : $python $($arguments -join ' ') $poste" -ForegroundColor Cyan
