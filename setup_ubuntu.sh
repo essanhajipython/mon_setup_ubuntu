@@ -1255,11 +1255,12 @@ install_zcode() {
 
 # --- skill:setup-ubuntu id=poste ---
 ###############################################################################
-# MODULE (skill:setup-ubuntu) — Poste : GitHub, workspace, réglages, connexions, projets
+# MODULE (skill:setup-ubuntu) — Poste : GitHub, workspace, skills, réglages, projets, Bureau, connexions
 ###############################################################################
 install_poste() {
-    # Passage d'un PC à l'autre : GitHub CLI, dépôt privé abdelhak-workspace (skills, réglages), puis
-    # scripts/poste.py du workspace : réglages des outils, projets clonés et installés (Mizan…), connexions.
+    # Passage d'un PC à l'autre : GitHub CLI, dépôt privé abdelhak-workspace, puis scripts/poste.py tout :
+    # skills reliés aux agents, réglages des outils, projets clonés, Bureau restauré depuis Drive et sauvegardé
+    # toutes les heures, connexions guidées.
     # À lancer après les modules ai, gcloud et gdrive, dont il connecte les comptes.
     local espace="$HOME/abdelhak-workspace" module_ok=1
     if command -v gh >/dev/null 2>&1; then
@@ -1314,11 +1315,12 @@ install_poste() {
     fi
     (cd "$espace" && ./install.sh) || { warn "Liens des skills : relancer ~/abdelhak-workspace/install.sh."; module_ok=0; }
 
-    log "Réglages des outils et projets (scripts/poste.py appliquer)..."
-    python3 "$espace/scripts/poste.py" appliquer || module_ok=0
-    if [[ "$HEADLESS" -eq 0 ]]; then
-        log "Connexions qui manquent (navigateur), puis vérification du PC..."
-        python3 "$espace/scripts/poste.py" connexions || warn "Il reste des points à régler : python3 ~/abdelhak-workspace/scripts/poste.py"
+    if [[ "$HEADLESS" -eq 1 ]]; then
+        log "Réglages, skills et projets (scripts/poste.py appliquer)..."
+        python3 "$espace/scripts/poste.py" appliquer || module_ok=0
+    else
+        log "Réglages, skills, projets, connexions, Bureau depuis Drive, sauvegarde horaire (scripts/poste.py tout)..."
+        python3 "$espace/scripts/poste.py" tout || { warn "Il reste des points à régler : python3 ~/abdelhak-workspace/scripts/poste.py"; module_ok=0; }
     fi
 
     if [[ "$module_ok" -eq 1 ]]; then
@@ -1361,7 +1363,7 @@ declare -A MODULE_LABELS=(
     [jupyter-notebook]="Jupyter Notebook + packages scientifiques (pipx)"
     [gcloud]="Google Cloud SDK (gcloud)"
     [zcode]="ZCode (desktop + CLI)"
-    [poste]="Poste : GitHub, workspace, réglages, connexions, projets"
+    [poste]="Poste : GitHub, workspace, skills, réglages, projets, Bureau, connexions"
 )
 
 run_module() {
