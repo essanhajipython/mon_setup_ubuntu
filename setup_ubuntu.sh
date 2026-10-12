@@ -1331,6 +1331,43 @@ install_poste() {
 }
 # --- skill:setup-ubuntu end:poste ---
 
+# --- skill:setup-ubuntu id=chatgpt ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — ChatGPT (application avec Codex)
+###############################################################################
+install_chatgpt() {
+    if dpkg -s chatgpt >/dev/null 2>&1; then
+        ok "ChatGPT (application avec Codex) déjà installé."
+    else
+        log "Installation de ChatGPT (application avec Codex, .deb officiel d'OpenAI)..."
+        # Le .deb pose lui-même le dépôt apt d'OpenAI (/etc/apt/sources.list.d/chatgpt.sources) :
+        # les mises à jour suivantes passent par apt upgrade. On prend la dernière version publiée.
+        local depot="https://persistent.oaistatic.com/codex-app-prod/linux/deb"
+        local fichier gpt_deb
+        fichier="$(curl -fsSL "$depot/dists/stable/main/binary-amd64/Packages" | sed -n 's/^Filename: //p' | tail -1)"
+        gpt_deb="$(mktemp --suffix=.deb)"
+        if [[ -n "$fichier" ]] && download_retry "$depot/$fichier" "$gpt_deb"; then
+            if sudo apt-get install -y "$gpt_deb"; then
+                APT_UPDATED=0
+                ok "ChatGPT installé (menu d'applis : ChatGPT)."
+            else
+                warn "Échec install ChatGPT (dépendances .deb)."
+                FAILED_MODULES+=("chatgpt")
+                rm -f "$gpt_deb"
+                return
+            fi
+        else
+            warn "Téléchargement de ChatGPT échoué."
+            FAILED_MODULES+=("chatgpt")
+            rm -f "$gpt_deb"
+            return
+        fi
+        rm -f "$gpt_deb"
+    fi
+    mark_done "chatgpt"
+}
+# --- skill:setup-ubuntu end:chatgpt ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1338,7 +1375,7 @@ install_poste() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode poste)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode chatgpt poste)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1364,6 +1401,7 @@ declare -A MODULE_LABELS=(
     [gcloud]="Google Cloud SDK (gcloud)"
     [zcode]="ZCode (desktop + CLI)"
     [poste]="Poste : GitHub, workspace, skills, réglages, projets, Bureau, connexions"
+    [chatgpt]="ChatGPT (application avec Codex)"
 )
 
 run_module() {
@@ -1392,6 +1430,7 @@ run_module() {
         gcloud) install_gcloud ;;
         zcode) install_zcode ;;
         poste) install_poste ;;
+        chatgpt) install_chatgpt ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
@@ -1491,7 +1530,7 @@ run_update() {
 ###############################################################################
 # POINT D'ENTRÉE
 ###############################################################################
-GUI_MODULES=(browser-pdf office dash-to-panel desktop-ai gnome-shortcuts)
+GUI_MODULES=(browser-pdf office dash-to-panel desktop-ai gnome-shortcuts chatgpt)
 
 main() {
     local args=("$@")
