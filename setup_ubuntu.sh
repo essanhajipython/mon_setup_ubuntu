@@ -1368,6 +1368,49 @@ install_chatgpt() {
 }
 # --- skill:setup-ubuntu end:chatgpt ---
 
+# --- skill:setup-ubuntu id=cloudflared ---
+###############################################################################
+# MODULE (skill:setup-ubuntu) — cloudflared (tunnel public de Mizan)
+###############################################################################
+install_cloudflared() {
+    if command -v cloudflared >/dev/null 2>&1; then
+        ok "cloudflared déjà installé ($(command -v cloudflared))."
+    else
+        log "Installation de cloudflared (dépôt apt officiel de Cloudflare)..."
+        # Tunnel public de Mizan (./mizan.sh --eleves). Le tunnel nommé et son domaine
+        # (~/.cloudflared/, ~/.config/mizan/eleves.env) ne sont pas recréés ici : ils
+        # viennent de l'ancien PC (disque de migration) ou de `cloudflared tunnel login`.
+        sudo mkdir -p --mode=0755 /usr/share/keyrings
+        if curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+            | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null; then
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" \
+                | sudo tee /etc/apt/sources.list.d/cloudflared.list >/dev/null
+            APT_UPDATED=0
+        fi
+        if apt_install cloudflared; then
+            ok "cloudflared installé (dépôt apt)."
+        else
+            # Secours : .deb de la dernière version publiée sur GitHub
+            local cf_deb; cf_deb="$(mktemp --suffix=.deb)"
+            if download_retry "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb" "$cf_deb" \
+                && sudo apt-get install -y "$cf_deb"; then
+                ok "cloudflared installé (.deb GitHub)."
+                rm -f "$cf_deb"
+            else
+                warn "Échec install cloudflared."
+                FAILED_MODULES+=("cloudflared")
+                rm -f "$cf_deb"
+                return
+            fi
+        fi
+    fi
+    if [[ ! -f "$HOME/.cloudflared/config.yml" ]]; then
+        warn "Tunnel de Mizan absent : copier ~/.cloudflared et ~/.config/mizan depuis l'ancien PC (sinon --eleves reste sur le wifi)."
+    fi
+    mark_done "cloudflared"
+}
+# --- skill:setup-ubuntu end:cloudflared ---
+
 ###############################################################################
 # MENU / DISPATCH
 ###############################################################################
@@ -1375,7 +1418,7 @@ install_chatgpt() {
 # IA/dev utilisables au plus vite), ensuite les gros téléchargements (office,
 # mobile, et surtout texlive-full de plusieurs Go) qui tournent en fin de course
 # sans surveillance.
-ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode chatgpt poste)
+ALL_MODULES=(prereqs ai python utils vscode browser-pdf desktop-ai gdrive docker local-ai dash-to-panel gnome-shortcuts office web-mobile latex jupyter-notebook gcloud zcode chatgpt cloudflared poste)
 
 # Libellés affichés dans le menu interactif, tenus à jour en parallèle de
 # ALL_MODULES. Le menu est généré à partir de ces deux tableaux (voir
@@ -1402,6 +1445,7 @@ declare -A MODULE_LABELS=(
     [zcode]="ZCode (desktop + CLI)"
     [poste]="Poste : GitHub, workspace, skills, réglages, projets, Bureau, connexions"
     [chatgpt]="ChatGPT (application avec Codex)"
+    [cloudflared]="cloudflared (tunnel public de Mizan)"
 )
 
 run_module() {
@@ -1431,6 +1475,7 @@ run_module() {
         zcode) install_zcode ;;
         poste) install_poste ;;
         chatgpt) install_chatgpt ;;
+        cloudflared) install_cloudflared ;;
         *) warn "Module inconnu : $m" ;;
     esac
 }
