@@ -55,6 +55,11 @@ réglages, projets, Bureau restauré depuis Drive et sauvegardé toutes les heur
 irm https://raw.githubusercontent.com/essanhajipython/mon_setup_ubuntu/main/windows/installer.ps1 | iex
 ```
 
+Pour un passage depuis ce PC Ubuntu avec le disque externe (données, clés, jetons, mémoire de Claude, polices,
+favoris), préparer d'abord le disque depuis Ubuntu :
+`python3 ~/abdelhak-workspace/scripts/preparer_migration.py /media/abdelhak/<disque>`. Le dossier
+`PC_Windows_migration` du disque contient le brief de l'agent qui installe le PC Windows et le guide d'une page.
+
 Relançable sans risque. Pour vérifier un PC plus tard, sous Windows comme sous Ubuntu :
 `python3 ~/abdelhak-workspace/scripts/poste.py` (sous Windows : `py -3`).
 
@@ -76,6 +81,7 @@ Relançable sans risque. Pour vérifier un PC plus tard, sous Windows comme sous
 | `--local-ai` | Ollama |
 | `--gdrive` | Google Drive via `rclone` (montage local automatique avec cache systemd) |
 | `--docker` | Docker + Docker Compose (via get.docker.com, utilisateur dans le groupe `docker`) |
+| `--cloudflared` | **cloudflared** (dépôt apt de Cloudflare) : tunnel public du serveur des élèves de Mizan (`./mizan.sh --eleves`). Le tunnel nommé vient de l'ancien PC (`~/.cloudflared`, `~/.config/mizan`). |
 | `--poste` | Passage d'un PC à l'autre : GitHub CLI et connexion, dépôt privé `abdelhak-workspace`, puis `scripts/poste.py tout` : skills, réglages des outils (télémétrie coupée…), les 12 projets clonés et préparés, Bureau restauré depuis Drive et sauvegardé toutes les heures, connexions guidées. En dernier dans `--all`. |
 
 ```bash
